@@ -121,15 +121,24 @@ class MockProvider:
 
 
 class OpenAIProvider:
-    """OpenAI / OpenAI-compatible API provider."""
+    """OpenAI / OpenAI-compatible API provider (also works with Gemini, Groq, etc.)."""
 
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
         from openai import OpenAI, AsyncOpenAI
 
-        self.api_key = api_key or Config.LLM_API_KEY
+        # Try OPENAI_API_KEY first (debate feature), then LLM_API_KEY (legacy)
+        self.api_key = api_key or Config.OPENAI_API_KEY or Config.LLM_API_KEY
         self.base_url = base_url or Config.LLM_BASE_URL
         if not self.api_key:
-            raise ValueError("OpenAI API key not configured (LLM_API_KEY)")
+            raise ValueError("No API key configured (OPENAI_API_KEY or LLM_API_KEY)")
+
+        # Detect Gemini: if the base_url points to Google's API, use it
+        # Also detect if the key looks like a Gemini key (starts with 'AI')
+        if self.api_key and self.api_key.startswith('AI'):
+            # Likely a Gemini API key — force the Gemini-compatible base URL
+            self.base_url = 'https://generativelanguage.googleapis.com/v1beta/openai/'
+            logger.info("Detected Gemini API key, using Google endpoint")
+
         self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         self.async_client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
 
@@ -262,7 +271,7 @@ class MultiModelClient:
         if model.startswith("claude"):
             key = "anthropic"
         else:
-            key = "openai"  # Default to OpenAI-compatible
+            key = "openai"  # Default to OpenAI-compatible (also handles Gemini, Groq, etc.)
         if key not in self._providers:
             try:
                 if key == "anthropic":
