@@ -83,6 +83,49 @@ Click the image to watch MiroFish's deep prediction of the lost ending based on 
 
 > **Financial Prediction**, **Political News Prediction** and more examples coming soon...
 
+## 💼 Investment Debate (New)
+
+MiroFish now includes an **IC-style Investment Debate** feature — a structured 4-round debate among specialized AI agents that produces a consensus investment recommendation.
+
+### How It Works
+
+Upload a research PDF (earnings report, analyst report, 10-K filing) and pose an investment question. Five AI agents with distinct perspectives debate the thesis:
+
+| Agent | Role | Model |
+|-------|------|-------|
+| **Quant Analyst** | Statistical factors, valuation metrics, technicals | GPT-4o |
+| **Fundamental Analyst** | Business model, moats, earnings quality | Claude |
+| **Risk Manager** | Tail risks, correlation, position sizing | GPT-4o |
+| **Devil's Advocate** | Argues against consensus, finds flaws | Claude Opus |
+| **CIO / PM** | Synthesizes all views, final recommendation | Best available |
+
+### Debate Rounds
+
+1. **Initial Thesis** — Each agent independently analyzes the document (parallel)
+2. **Cross-Examination** — Agents challenge each other's arguments
+3. **Rebuttal & Defense** — Agents defend or concede specific points
+4. **CIO Synthesis** — Final recommendation with confidence distribution and calibrated conviction score (Platt scaling)
+
+### API Endpoints
+
+```
+POST /api/debate/start          — Start a new debate (file upload + question)
+GET  /api/debate/{id}/status    — Debate progress
+GET  /api/debate/{id}/result    — Full result with all rounds
+GET  /api/debate/{id}/rounds/{n} — Individual round
+GET  /api/debate/list           — List all debates
+```
+
+### Configuration
+
+Add to your `.env` file:
+```env
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+See `.env.example` for per-agent model configuration options.
+
 ## 🔄 Workflow
 
 1. **Graph Building**: Seed extraction & Individual/collective memory injection & GraphRAG construction

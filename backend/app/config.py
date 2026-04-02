@@ -62,6 +62,18 @@ class Config:
     REPORT_AGENT_MAX_TOOL_CALLS = int(os.environ.get('REPORT_AGENT_MAX_TOOL_CALLS', '5'))
     REPORT_AGENT_MAX_REFLECTION_ROUNDS = int(os.environ.get('REPORT_AGENT_MAX_REFLECTION_ROUNDS', '2'))
     REPORT_AGENT_TEMPERATURE = float(os.environ.get('REPORT_AGENT_TEMPERATURE', '0.5'))
+
+    # Multi-model LLM for investment debate
+    OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', os.environ.get('LLM_API_KEY'))
+    ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
+
+    # Per-agent model configuration
+    QUANT_AGENT_MODEL = os.environ.get('QUANT_AGENT_MODEL', 'gpt-4o')
+    FUNDAMENTAL_AGENT_MODEL = os.environ.get('FUNDAMENTAL_AGENT_MODEL', 'claude-3-5-sonnet-20241022')
+    RISK_AGENT_MODEL = os.environ.get('RISK_AGENT_MODEL', 'gpt-4o')
+    DEVIL_ADVOCATE_MODEL = os.environ.get('DEVIL_ADVOCATE_MODEL', 'claude-3-opus-20240229')
+    CIO_MODEL = os.environ.get('CIO_MODEL', 'gpt-4o')
+    FALLBACK_MODEL = os.environ.get('FALLBACK_MODEL', 'gpt-4o')
     
     @classmethod
     def validate(cls):

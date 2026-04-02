@@ -4,6 +4,7 @@
     <nav class="navbar">
       <div class="nav-brand">MIROFISH</div>
       <div class="nav-links">
+        <router-link to="/debate" class="debate-link">Investment Debate</router-link>
         <a href="https://github.com/666ghj/MiroFish" target="_blank" class="github-link">
           访问我们的Github主页 <span class="arrow">↗</span>
         </a>
@@ -351,6 +352,24 @@ const startSimulation = () => {
 .nav-links {
   display: flex;
   align-items: center;
+  gap: 24px;
+}
+
+.debate-link {
+  color: #ff9800;
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border: 1px solid #ff9800;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.debate-link:hover {
+  background: #ff9800;
+  color: #000;
 }
 
 .github-link {
