@@ -8,7 +8,7 @@ from .debate import (
     AgentRole, AgentResponse, AgentThesis,
     CIOSynthesis, ConsensusScore, CrossExamination,
     DebateResult, DebateRound, DebateStatus,
-    Direction, InvestmentFactor, Rebuttal,
+    Direction, InvestmentFactor, Magnitude, Rebuttal, TimeHorizon,
 )
 
 __all__ = [
@@ -17,5 +17,5 @@ __all__ = [
     'AgentRole', 'AgentResponse', 'AgentThesis',
     'CIOSynthesis', 'ConsensusScore', 'CrossExamination',
     'DebateResult', 'DebateRound', 'DebateStatus',
-    'Direction', 'InvestmentFactor', 'Rebuttal',
+    'Direction', 'InvestmentFactor', 'Magnitude', 'Rebuttal', 'TimeHorizon',
 ]

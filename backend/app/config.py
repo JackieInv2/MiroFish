@@ -74,7 +74,10 @@ class Config:
     DEVIL_ADVOCATE_MODEL = os.environ.get('DEVIL_ADVOCATE_MODEL', 'claude-3-opus-20240229')
     CIO_MODEL = os.environ.get('CIO_MODEL', 'gpt-4o')
     FALLBACK_MODEL = os.environ.get('FALLBACK_MODEL', 'gpt-4o')
-    
+
+    # Demo / mock mode: when True, LLM calls return canned responses
+    DEMO_MODE = os.environ.get('DEMO_MODE', 'false').lower() == 'true'
+
     @classmethod
     def validate(cls):
         """验证必要配置"""

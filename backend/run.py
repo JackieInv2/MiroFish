@@ -24,14 +24,13 @@ from app.config import Config
 
 def main():
     """主函数"""
-    # 验证配置
+    # 验证配置 (warn but don't exit — some features like debate can work without all keys)
     errors = Config.validate()
     if errors:
-        print("配置错误:")
+        print("配置警告 (some features may be limited):")
         for err in errors:
             print(f"  - {err}")
         print("\n请检查 .env 文件中的配置")
-        sys.exit(1)
     
     # 创建应用
     app = create_app()

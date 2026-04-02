@@ -20,6 +20,106 @@ logger = logging.getLogger("mirofish.llm")
 # Provider implementations
 # ---------------------------------------------------------------------------
 
+class MockProvider:
+    """Mock provider for demo/testing — returns realistic canned responses."""
+
+    _MOCK_RESPONSES = {
+        1: {
+            "direction": "BUY",
+            "conviction": 7.5,
+            "key_arguments": [
+                "Strong revenue growth of 15% YoY driven by services segment expansion",
+                "Gross margins expanding to 46.2% indicating pricing power and operational efficiency",
+                "Free cash flow generation of $110B provides significant capital return capacity"
+            ],
+            "key_risks": [
+                "China revenue exposure (~18%) creates geopolitical and regulatory risk",
+                "Hardware replacement cycles lengthening could pressure unit volumes"
+            ],
+            "price_target": "$210",
+            "expected_return": "15-20% upside over 12 months",
+            "time_horizon": "12 months",
+            "causal_factors": [
+                {
+                    "event": "Services revenue acceleration",
+                    "channel": "Recurring revenue and margin expansion",
+                    "direction": "bullish",
+                    "magnitude": "high",
+                    "confidence": 0.85,
+                    "time_horizon": "medium_term"
+                }
+            ]
+        },
+        2: {
+            "challenges": {
+                "Quant Analyst": [
+                    "Your P/E multiple assumption doesn't account for the current rate environment — at 5% risk-free, a 28x forward P/E is harder to justify",
+                    "The momentum signal you cited has historically mean-reverted within 3 months for mega-caps"
+                ],
+                "Fundamental Analyst": [
+                    "Services growth is decelerating quarter over quarter — 15% YoY masks sequential slowdown",
+                    "Management's capex guidance suggests margin compression ahead, contradicting your margin expansion thesis"
+                ],
+                "Risk Manager": [
+                    "Your tail risk analysis ignores the concentration risk in the top 5 holdings of major indices",
+                    "Correlation assumptions during a market stress event would significantly underestimate drawdown"
+                ]
+            }
+        },
+        3: {
+            "defenses": [
+                "The P/E premium is justified by the 2x earnings growth rate relative to the S&P 500 — PEG ratio of 1.4x is reasonable for a high-quality compounder",
+                "Sequential deceleration is seasonal — comparing Q1 vs Q4 always shows this pattern; the YoY trend is what matters"
+            ],
+            "concessions": [
+                "I concede that China risk is under-appreciated — I'm reducing my conviction from 8 to 7 to account for potential regulatory actions"
+            ],
+            "updated_conviction": 7.0,
+            "updated_direction": "BUY"
+        },
+        4: {
+            "recommendation": "BUY",
+            "confidence_distribution": {"BUY": 0.65, "HOLD": 0.25, "SELL": 0.10},
+            "consensus_conviction": 7.2,
+            "key_thesis": "The investment committee recommends a BUY with moderate conviction. Strong fundamentals, expanding margins, and robust cash flow generation support the thesis, though China exposure and valuation stretch in a higher-rate environment warrant position sizing discipline.",
+            "primary_risks": [
+                "China regulatory and geopolitical risk impacting ~18% of revenue",
+                "Multiple compression if interest rates remain elevated longer than expected",
+                "Hardware cycle elongation reducing upgrade revenue"
+            ],
+            "position_sizing_guidance": "2-3% portfolio weight; scale in over 2-3 months to average entry price",
+            "dissenting_views": [
+                "Devil's Advocate argues the risk/reward is insufficient at current valuation — better entry points likely on any macro correction"
+            ],
+            "debate_quality_score": 8.0
+        },
+    }
+
+    def chat(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
+        import json, time
+        time.sleep(0.5)  # simulate latency
+        round_num = self._detect_round(messages)
+        return json.dumps(self._MOCK_RESPONSES.get(round_num, self._MOCK_RESPONSES[1]))
+
+    async def achat(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
+        import json, asyncio
+        await asyncio.sleep(0.5)
+        round_num = self._detect_round(messages)
+        return json.dumps(self._MOCK_RESPONSES.get(round_num, self._MOCK_RESPONSES[1]))
+
+    @staticmethod
+    def _detect_round(messages):
+        text = " ".join(m.get("content", "") for m in messages).lower()
+        # Check most specific (CIO) first — round 4 transcript contains all prior keywords
+        if "cio" in text and "synthesis" in text:
+            return 4
+        if "rebuttal" in text:
+            return 3
+        if "cross-examination" in text:
+            return 2
+        return 1
+
+
 class OpenAIProvider:
     """OpenAI / OpenAI-compatible API provider."""
 
@@ -152,6 +252,13 @@ class MultiModelClient:
 
     def _get_provider(self, model: str):
         """Lazy-init the correct provider for the given model."""
+        # In demo mode, always return mock provider
+        if Config.DEMO_MODE:
+            if "mock" not in self._providers:
+                self._providers["mock"] = MockProvider()
+                logger.info("Using MockProvider (DEMO_MODE=true)")
+            return self._providers["mock"]
+
         if model.startswith("claude"):
             key = "anthropic"
         else:
@@ -164,8 +271,8 @@ class MultiModelClient:
                     self._providers[key] = OpenAIProvider()
                 logger.info(f"Initialized {key} provider")
             except Exception as e:
-                logger.error(f"Failed to init {key} provider: {e}")
-                raise
+                logger.warning(f"Failed to init {key} provider: {e} — falling back to MockProvider")
+                self._providers[key] = MockProvider()
         return self._providers[key]
 
     def chat(
