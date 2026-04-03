@@ -26,7 +26,7 @@ from ..services.investment_debate import (
 from ..utils.file_parser import FileParser
 from ..utils.logger import get_logger
 
-logger = get_logger("mirofish.api.debate")
+logger = get_logger("btrate.api.debate")
 
 # Keep track of running debate threads
 _running: dict = {}

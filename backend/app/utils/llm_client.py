@@ -2,7 +2,7 @@
 LLM Client — Multi-model abstraction layer.
 
 Supports OpenAI and Anthropic providers, with per-agent model routing
-and graceful fallback. Backward compatible with existing MiroFish code
+and graceful fallback. Backward compatible with existing BTRate code
 that uses `LLMClient(...)`.
 """
 
@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from ..config import Config
 
-logger = logging.getLogger("mirofish.llm")
+logger = logging.getLogger("btrate.llm")
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +348,7 @@ class MultiModelClient:
 
 
 # ---------------------------------------------------------------------------
-# Backward-compatible LLMClient (used by existing MiroFish code)
+# Backward-compatible LLMClient (used by existing BTRate code)
 # ---------------------------------------------------------------------------
 
 class LLMClient:

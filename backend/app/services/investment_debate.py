@@ -34,7 +34,7 @@ from ..models.debate import (
 )
 from ..utils.llm_client import MultiModelClient
 
-logger = logging.getLogger("mirofish.debate")
+logger = logging.getLogger("btrate.debate")
 
 # Platt scaling parameter: alpha = sqrt(3) ≈ 1.73
 PLATT_ALPHA = math.sqrt(3)

@@ -2,7 +2,7 @@
   <div class="debate-view">
     <!-- Navigation Bar -->
     <nav class="navbar">
-      <div class="nav-brand" @click="$router.push('/')">MIROFISH</div>
+      <div class="nav-brand" @click="$router.push('/')">BTRATE</div>
       <div class="nav-center">Investment Debate Engine</div>
       <div class="nav-right">
         <span class="status-pill" :class="statusClass">
