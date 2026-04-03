@@ -1,0 +1,24 @@
+# BTRate Debate Engine — minimal dependencies only
+# ~200MB install vs ~8GB with full requirements.txt
+
+# Core framework
+flask>=3.0.0
+flask-cors>=6.0.0
+
+# LLM clients (lazy-imported, only loads what's needed)
+openai>=1.0.0
+anthropic>=0.34.0
+
+# Data validation
+pydantic>=2.0.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# PDF + file parsing
+PyMuPDF>=1.24.0
+charset-normalizer>=3.0.0
+chardet>=5.0.0
+
+# Production WSGI server
+gunicorn>=21.0.0
