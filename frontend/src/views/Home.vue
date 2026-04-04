@@ -122,78 +122,26 @@
         <!-- 右栏：交互控制台 -->
         <div class="right-panel">
           <div class="console-box">
-            <!-- 上传区域 -->
             <div class="console-section">
               <div class="console-header">
-                <span class="console-label">01 / Company Document</span>
-                <span class="console-meta">Formats: PDF, MD, TXT</span>
+                <span class="console-label">01 / Investment Question</span>
               </div>
-              
-              <div 
-                class="upload-zone"
-                :class="{ 'drag-over': isDragOver, 'has-files': files.length > 0 }"
-                @dragover.prevent="handleDragOver"
-                @dragleave.prevent="handleDragLeave"
-                @drop.prevent="handleDrop"
-                @click="triggerFileInput"
-              >
-                <input
-                  ref="fileInput"
-                  type="file"
-                  multiple
-                  accept=".pdf,.md,.txt"
-                  @change="handleFileSelect"
-                  style="display: none"
-                  :disabled="loading"
-                />
-                
-                <div v-if="files.length === 0" class="upload-placeholder">
-                  <div class="upload-icon">↑</div>
-                  <div class="upload-title">Drop file to upload</div>
-                  <div class="upload-hint">or click to browse</div>
-                </div>
-                
-                <div v-else class="file-list">
-                  <div v-for="(file, index) in files" :key="index" class="file-item">
-                    <span class="file-icon">📄</span>
-                    <span class="file-name">{{ file.name }}</span>
-                    <button @click.stop="removeFile(index)" class="remove-btn">×</button>
-                  </div>
-                </div>
+              <div class="cta-placeholder">
+                <p class="cta-text">Type your investment thesis, upload an earnings PDF or research note, and let 5 AI agents debate it to a calibrated BUY / SELL / HOLD.</p>
               </div>
             </div>
-
-            <!-- 分割线 -->
-            <div class="console-divider">
-              <span>parameters</span>
-            </div>
-
-            <!-- 输入区域 -->
             <div class="console-section">
               <div class="console-header">
-                <span class="console-label">>_ 02 / Analysis Prompt</span>
+                <span class="console-label">02 / Research Document</span>
+                <span class="console-meta">PDF, TXT, MD</span>
               </div>
-              <div class="input-wrapper">
-                <textarea
-                  v-model="formData.simulationRequirement"
-                  class="code-input"
-                  placeholder="// Describe what you want to evaluate (e.g. &quot;Is AAPL a buy given Q4 earnings miss and margin compression?&quot;)"
-                  rows="6"
-                  :disabled="loading"
-                ></textarea>
-                <div class="model-badge">Engine: BTRate-V1.0</div>
+              <div class="cta-placeholder">
+                <p class="cta-text">Upload on the next screen.</p>
               </div>
             </div>
-
-            <!-- 启动按钮 -->
             <div class="console-section btn-section">
-              <button 
-                class="start-engine-btn"
-                @click="startSimulation"
-                :disabled="!canSubmit || loading"
-              >
-                <span v-if="!loading">Start Debate</span>
-                <span v-else>Initializing...</span>
+              <button class="start-engine-btn" @click="goToDebate">
+                Start Debate
                 <span class="btn-arrow">→</span>
               </button>
             </div>
@@ -201,87 +149,15 @@
         </div>
       </section>
 
-      <!-- 历史项目数据库 -->
-      <HistoryDatabase />
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import HistoryDatabase from '../components/HistoryDatabase.vue'
 
 const router = useRouter()
 
-// 表单数据
-const formData = ref({
-  simulationRequirement: ''
-})
-
-// 文件列表
-const files = ref([])
-
-// 状态
-const loading = ref(false)
-const error = ref('')
-const isDragOver = ref(false)
-
-// 文件输入引用
-const fileInput = ref(null)
-
-// 计算属性:是否可以提交
-const canSubmit = computed(() => {
-  return formData.value.simulationRequirement.trim() !== '' && files.value.length > 0
-})
-
-// 触发文件选择
-const triggerFileInput = () => {
-  if (!loading.value) {
-    fileInput.value?.click()
-  }
-}
-
-// 处理文件选择
-const handleFileSelect = (event) => {
-  const selectedFiles = Array.from(event.target.files)
-  addFiles(selectedFiles)
-}
-
-// 处理拖拽相关
-const handleDragOver = (e) => {
-  if (!loading.value) {
-    isDragOver.value = true
-  }
-}
-
-const handleDragLeave = (e) => {
-  isDragOver.value = false
-}
-
-const handleDrop = (e) => {
-  isDragOver.value = false
-  if (loading.value) return
-  
-  const droppedFiles = Array.from(e.dataTransfer.files)
-  addFiles(droppedFiles)
-}
-
-// 添加文件
-const addFiles = (newFiles) => {
-  const validFiles = newFiles.filter(file => {
-    const ext = file.name.split('.').pop().toLowerCase()
-    return ['pdf', 'md', 'txt'].includes(ext)
-  })
-  files.value.push(...validFiles)
-}
-
-// 移除文件
-const removeFile = (index) => {
-  files.value.splice(index, 1)
-}
-
-// 滚动到底部
 const scrollToBottom = () => {
   window.scrollTo({
     top: document.body.scrollHeight,
@@ -289,20 +165,8 @@ const scrollToBottom = () => {
   })
 }
 
-// 开始模拟 - 立即跳转，API调用在Process页面进行
-const startSimulation = () => {
-  if (!canSubmit.value || loading.value) return
-  
-  // 存储待上传的数据
-  import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
-    setPendingUpload(files.value, formData.value.simulationRequirement)
-    
-    // 立即跳转到Process页面（使用特殊标识表示新建项目）
-    router.push({
-      name: 'Process',
-      params: { projectId: 'new' }
-    })
-  })
+const goToDebate = () => {
+  router.push('/debate')
 }
 </script>
 
@@ -706,133 +570,21 @@ const startSimulation = () => {
   color: #666;
 }
 
-.upload-zone {
+.cta-placeholder {
+  background: #FAFAFA;
   border: 1px dashed #CCC;
-  height: 200px;
-  overflow-y: auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.3s;
-  background: #FAFAFA;
-}
-
-.upload-zone.has-files {
-  align-items: flex-start;
-}
-
-.upload-zone:hover {
-  background: #F0F0F0;
-  border-color: #999;
-}
-
-.upload-placeholder {
-  text-align: center;
-}
-
-.upload-icon {
-  width: 40px;
-  height: 40px;
-  border: 1px solid #DDD;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 15px;
-  color: #999;
-}
-
-.upload-title {
-  font-weight: 500;
-  font-size: 0.9rem;
-  margin-bottom: 5px;
-}
-
-.upload-hint {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: #999;
-}
-
-.file-list {
-  width: 100%;
-  padding: 15px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.file-item {
-  display: flex;
-  align-items: center;
-  background: var(--white);
-  padding: 8px 12px;
-  border: 1px solid #EEE;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-}
-
-.file-name {
-  flex: 1;
-  margin: 0 10px;
-}
-
-.remove-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 1.2rem;
-  color: #999;
-}
-
-.console-divider {
-  display: flex;
-  align-items: center;
-  margin: 10px 0;
-}
-
-.console-divider::before,
-.console-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: #EEE;
-}
-
-.console-divider span {
-  padding: 0 15px;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: #BBB;
-  letter-spacing: 1px;
-}
-
-.input-wrapper {
-  position: relative;
-  border: 1px solid #DDD;
-  background: #FAFAFA;
-}
-
-.code-input {
-  width: 100%;
-  border: none;
-  background: transparent;
   padding: 20px;
-  font-family: var(--font-mono);
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+}
+
+.cta-text {
+  color: #666;
   font-size: 0.9rem;
   line-height: 1.6;
-  resize: vertical;
-  outline: none;
-  min-height: 150px;
-}
-
-.model-badge {
-  position: absolute;
-  bottom: 10px;
-  right: 15px;
+  margin: 0;
   font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: #AAA;
 }
 
 .start-engine-btn {
@@ -854,29 +606,19 @@ const startSimulation = () => {
   overflow: hidden;
 }
 
-/* 可点击状态（非禁用） */
-.start-engine-btn:not(:disabled) {
-  background: var(--black);
+.start-engine-btn {
   border: 1px solid var(--black);
   animation: pulse-border 2s infinite;
 }
 
-.start-engine-btn:hover:not(:disabled) {
+.start-engine-btn:hover {
   background: var(--orange);
   border-color: var(--orange);
   transform: translateY(-2px);
 }
 
-.start-engine-btn:active:not(:disabled) {
+.start-engine-btn:active {
   transform: translateY(0);
-}
-
-.start-engine-btn:disabled {
-  background: #E5E5E5;
-  color: #999;
-  cursor: not-allowed;
-  transform: none;
-  border: 1px solid #E5E5E5;
 }
 
 /* 引导动画：微妙的边框脉冲 */
