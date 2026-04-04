@@ -5,8 +5,8 @@
       <div class="nav-brand">BTRATE</div>
       <div class="nav-links">
         <router-link to="/debate" class="debate-link">Investment Debate</router-link>
-        <a href="https://github.com/666ghj/BTRate" target="_blank" class="github-link">
-          访问我们的Github主页 <span class="arrow">↗</span>
+        <a href="https://github.com/JackieInv2/BTRate" target="_blank" class="github-link">
+          View on GitHub <span class="arrow">↗</span>
         </a>
       </div>
     </nav>
@@ -16,21 +16,21 @@
       <section class="hero-section">
         <div class="hero-left">
           <div class="tag-row">
-            <span class="orange-tag">简洁通用的群体智能引擎</span>
-            <span class="version-text">/ v0.1-预览版</span>
+            <span class="orange-tag">IC Debate Engine</span>
+            <span class="version-text">/ v0.1 · Preview</span>
           </div>
           
           <h1 class="main-title">
-            上传任意报告<br>
-            <span class="gradient-text">即刻推演未来</span>
+            Upload Any Report<br>
+            <span class="gradient-text">Instant IC Debate</span>
           </h1>
           
           <div class="hero-desc">
             <p>
-              即使只有一段文字，<span class="highlight-bold">BTRate</span> 也能基于其中的现实种子，全自动生成与之对应的至多<span class="highlight-orange">百万级Agent</span>构成的平行世界。通过上帝视角注入变量，在复杂的群体交互中寻找动态环境下的<span class="highlight-code">“局部最优解”</span>
+              Upload a company's financials, earnings call, or research report. <span class=”highlight-bold”>BTRate</span>'s <span class=”highlight-orange”>multi-agent IC</span> runs 4 structured debate rounds — Quant, Fundamental, Risk, and Devil's Advocate — converging on a <span class=”highlight-code”>calibrated BUY/SELL/HOLD</span>
             </p>
             <p class="slogan-text">
-              让未来在 Agent 群中预演，让决策在百战后胜出<span class="blinking-cursor">_</span>
+              Let agents debate so conviction can win<span class="blinking-cursor">_</span>
             </p>
           </div>
            
@@ -54,65 +54,65 @@
         <!-- 左栏：状态与步骤 -->
         <div class="left-panel">
           <div class="panel-header">
-            <span class="status-dot">■</span> 系统状态
+            <span class="status-dot">■</span> System Status
           </div>
           
-          <h2 class="section-title">准备就绪</h2>
+          <h2 class="section-title">Ready</h2>
           <p class="section-desc">
-            预测引擎待命中，可上传多份非结构化数据以初始化模拟序列
+            Debate engine standing by. Upload financials to start an IC session.
           </p>
           
           <!-- 数据指标卡片 -->
           <div class="metrics-row">
             <div class="metric-card">
-              <div class="metric-value">低成本</div>
-              <div class="metric-label">常规模拟平均5$/次</div>
+              <div class="metric-value">Free Tier</div>
+              <div class="metric-label">Powered by Gemini 2.5 Flash</div>
             </div>
             <div class="metric-card">
-              <div class="metric-value">高可用</div>
-              <div class="metric-label">最多百万级Agent模拟</div>
+              <div class="metric-value">4 Rounds</div>
+              <div class="metric-label">Quant · Fundamental · Risk · CIO</div>
             </div>
           </div>
 
           <!-- 项目模拟步骤介绍 (新增区域) -->
           <div class="steps-container">
             <div class="steps-header">
-               <span class="diamond-icon">◇</span> 工作流序列
+               <span class="diamond-icon">◇</span> Workflow Sequence
             </div>
             <div class="workflow-list">
               <div class="workflow-item">
                 <span class="step-num">01</span>
                 <div class="step-info">
-                  <div class="step-title">图谱构建</div>
-                  <div class="step-desc">现实种子提取 & 个体与群体记忆注入 & GraphRAG构建</div>
+                  <div class="step-title">Document Upload</div>
+                  <div class="step-desc">Parse earnings reports, research notes, or any financial document</div>
                 </div>
               </div>
               <div class="workflow-item">
                 <span class="step-num">02</span>
                 <div class="step-info">
-                  <div class="step-title">环境搭建</div>
-                  <div class="step-desc">实体关系抽取 & 人设生成 & 环境配置Agent注入仿真参数</div>
+                  <div class="step-title">IC Debate Rounds</div>
+                  <div class="step-desc">4 structured rounds: Quant, Fundamental, Risk, Devil's Advocate</div>
                 </div>
               </div>
               <div class="workflow-item">
                 <span class="step-num">03</span>
                 <div class="step-info">
-                  <div class="step-title">开始模拟</div>
-                  <div class="step-desc">双平台并行模拟 & 自动解析预测需求 & 动态更新时序记忆</div>
+                  <div class="step-title">Consensus Formation</div>
+                  <div class="step-desc">Agents converge on BUY / SELL / HOLD with Platt-calibrated conviction</div>
                 </div>
               </div>
               <div class="workflow-item">
                 <span class="step-num">04</span>
                 <div class="step-info">
-                  <div class="step-title">报告生成</div>
-                  <div class="step-desc">ReportAgent拥有丰富的工具集与模拟后环境进行深度交互</div>
+                  <div class="step-title">CIO Synthesis</div>
+                  <div class="step-desc">Chief Investment Officer agent synthesizes final recommendation</div>
                 </div>
               </div>
               <div class="workflow-item">
                 <span class="step-num">05</span>
                 <div class="step-info">
-                  <div class="step-title">深度互动</div>
-                  <div class="step-desc">与模拟世界中的任意一位进行对话 & 与ReportAgent进行对话</div>
+                  <div class="step-title">Mind Map View</div>
+                  <div class="step-desc">Interactive SVG visualization of the full debate tree</div>
                 </div>
               </div>
             </div>
@@ -125,8 +125,8 @@
             <!-- 上传区域 -->
             <div class="console-section">
               <div class="console-header">
-                <span class="console-label">01 / 现实种子</span>
-                <span class="console-meta">支持格式: PDF, MD, TXT</span>
+                <span class="console-label">01 / Company Document</span>
+                <span class="console-meta">Formats: PDF, MD, TXT</span>
               </div>
               
               <div 
@@ -149,8 +149,8 @@
                 
                 <div v-if="files.length === 0" class="upload-placeholder">
                   <div class="upload-icon">↑</div>
-                  <div class="upload-title">拖拽文件上传</div>
-                  <div class="upload-hint">或点击浏览文件系统</div>
+                  <div class="upload-title">Drop file to upload</div>
+                  <div class="upload-hint">or click to browse</div>
                 </div>
                 
                 <div v-else class="file-list">
@@ -165,23 +165,23 @@
 
             <!-- 分割线 -->
             <div class="console-divider">
-              <span>输入参数</span>
+              <span>parameters</span>
             </div>
 
             <!-- 输入区域 -->
             <div class="console-section">
               <div class="console-header">
-                <span class="console-label">>_ 02 / 模拟提示词</span>
+                <span class="console-label">>_ 02 / Analysis Prompt</span>
               </div>
               <div class="input-wrapper">
                 <textarea
                   v-model="formData.simulationRequirement"
                   class="code-input"
-                  placeholder="// 用自然语言输入模拟或预测需求（例.武大若发布撤销肖某处分的公告，会引发什么舆情走向）"
+                  placeholder="// Describe what you want to evaluate (e.g. &quot;Is AAPL a buy given Q4 earnings miss and margin compression?&quot;)"
                   rows="6"
                   :disabled="loading"
                 ></textarea>
-                <div class="model-badge">引擎: BTRate-V1.0</div>
+                <div class="model-badge">Engine: BTRate-V1.0</div>
               </div>
             </div>
 
@@ -192,8 +192,8 @@
                 @click="startSimulation"
                 :disabled="!canSubmit || loading"
               >
-                <span v-if="!loading">启动引擎</span>
-                <span v-else>初始化中...</span>
+                <span v-if="!loading">Start Debate</span>
+                <span v-else>Initializing...</span>
                 <span class="btn-arrow">→</span>
               </button>
             </div>
