@@ -197,28 +197,69 @@
                       </span>
                       <span class="card-role">{{ AGENT_NAMES[resp.agent_role] }}</span>
                     </div>
-                    <div v-if="parseContent(resp.content)" class="card-verdict">
-                      <span class="card-direction" :class="parseContent(resp.content).direction?.toLowerCase()">
-                        {{ parseContent(resp.content).direction }}
+                    <!-- Use structured thesis (R1), rebuttal (R3), or cio_synthesis (R4) for verdict -->
+                    <div v-if="getThesis(resp)" class="card-verdict">
+                      <span class="card-direction" :class="getThesis(resp).direction?.toLowerCase()">
+                        {{ getThesis(resp).direction }}
                       </span>
-                      <span class="card-conviction">{{ parseContent(resp.content).conviction }}/10</span>
+                      <span class="card-conviction">{{ getThesis(resp).conviction }}/10</span>
+                    </div>
+                    <div v-else-if="getCIOSynthesis(resp)" class="card-verdict">
+                      <span class="card-direction" :class="getCIOSynthesis(resp).recommendation?.toLowerCase()">
+                        {{ getCIOSynthesis(resp).recommendation }}
+                      </span>
+                      <span class="card-conviction">{{ getCIOSynthesis(resp).consensus_conviction }}/10</span>
                     </div>
                   </div>
-                  <div v-if="parseContent(resp.content)" class="card-body">
-                    <div v-if="parseContent(resp.content).key_arguments?.length" class="card-section">
-                      <div class="card-section-title">ARGUMENTS</div>
-                      <div v-for="(a, i) in parseContent(resp.content).key_arguments.slice(0,2)" :key="i" class="card-bullet">· {{ a }}</div>
-                    </div>
-                    <div v-if="parseContent(resp.content).key_risks?.length" class="card-section">
-                      <div class="card-section-title risk-title">RISKS</div>
-                      <div class="card-bullet risk-bullet">· {{ parseContent(resp.content).key_risks[0] }}</div>
-                    </div>
-                    <div v-if="resp.rebuttal" class="card-rebuttal-toggle" @click="toggleRebuttal(resp.agent_role)">
-                      {{ showRebuttal[resp.agent_role] ? '▲ Hide rebuttal' : '▼ Show rebuttal' }}
-                    </div>
-                    <div v-if="showRebuttal[resp.agent_role] && resp.rebuttal" class="card-rebuttal">
-                      {{ resp.rebuttal }}
-                    </div>
+                  <div class="card-body">
+                    <!-- Round 1: thesis arguments + risks -->
+                    <template v-if="getThesis(resp)">
+                      <div v-if="getThesis(resp).key_arguments?.length" class="card-section">
+                        <div class="card-section-title">ARGUMENTS</div>
+                        <div v-for="(a, i) in getThesis(resp).key_arguments.slice(0,3)" :key="i" class="card-bullet">· {{ a }}</div>
+                      </div>
+                      <div v-if="getThesis(resp).key_risks?.length" class="card-section">
+                        <div class="card-section-title risk-title">RISKS</div>
+                        <div v-for="(r, i) in getThesis(resp).key_risks.slice(0,2)" :key="i" class="card-bullet risk-bullet">· {{ r }}</div>
+                      </div>
+                    </template>
+                    <!-- Round 2: cross-examination challenges -->
+                    <template v-else-if="getCrossExam(resp)">
+                      <div class="card-section">
+                        <div class="card-section-title">CHALLENGES RAISED</div>
+                        <template v-for="(items, target) in getCrossExam(resp).challenges" :key="target">
+                          <div class="card-bullet challenge-target">› {{ target }}</div>
+                          <div v-for="(c, ci) in items.slice(0,1)" :key="ci" class="card-bullet challenge-item">· {{ c }}</div>
+                        </template>
+                      </div>
+                    </template>
+                    <!-- Round 3: rebuttal defenses + concessions -->
+                    <template v-else-if="getRebuttal(resp)">
+                      <div v-if="getRebuttal(resp).defenses?.length" class="card-section">
+                        <div class="card-section-title">DEFENSES</div>
+                        <div v-for="(d, i) in getRebuttal(resp).defenses.slice(0,2)" :key="i" class="card-bullet">· {{ d }}</div>
+                      </div>
+                      <div v-if="getRebuttal(resp).concessions?.length" class="card-section">
+                        <div class="card-section-title risk-title">CONCESSIONS</div>
+                        <div v-for="(c, i) in getRebuttal(resp).concessions.slice(0,1)" :key="i" class="card-bullet risk-bullet">· {{ c }}</div>
+                      </div>
+                      <div v-if="getRebuttal(resp).updated_direction" class="card-section">
+                        <div class="card-section-title">UPDATED VIEW</div>
+                        <div class="card-bullet">· {{ getRebuttal(resp).updated_direction }} · conviction {{ getRebuttal(resp).updated_conviction }}/10</div>
+                      </div>
+                    </template>
+                    <!-- Round 4: CIO synthesis -->
+                    <template v-else-if="getCIOSynthesis(resp)">
+                      <div v-if="getCIOSynthesis(resp).key_thesis" class="card-section">
+                        <div class="card-section-title">SYNTHESIS</div>
+                        <div class="card-bullet">· {{ getCIOSynthesis(resp).key_thesis }}</div>
+                      </div>
+                      <div v-if="getCIOSynthesis(resp).position_sizing_guidance" class="card-section">
+                        <div class="card-section-title">SIZING</div>
+                        <div class="card-bullet">· {{ getCIOSynthesis(resp).position_sizing_guidance }}</div>
+                      </div>
+                    </template>
+                    <!-- Fallback: show nothing extra -->
                   </div>
                 </div>
               </div>
@@ -390,6 +431,37 @@ function parseContent(str) {
   } catch {
     return null
   }
+}
+
+// Structured accessors — use backend-parsed fields, never raw content string
+function getThesis(resp) {
+  // Backend populates resp.thesis for Round 1
+  if (resp.thesis && typeof resp.thesis === 'object') return resp.thesis
+  // Fallback: try parsing content if it has direction+conviction
+  const p = parseContent(resp.content)
+  if (p && p.direction && p.conviction != null) return p
+  return null
+}
+
+function getCrossExam(resp) {
+  if (resp.cross_examination && typeof resp.cross_examination === 'object') return resp.cross_examination
+  const p = parseContent(resp.content)
+  if (p && p.challenges) return p
+  return null
+}
+
+function getRebuttal(resp) {
+  if (resp.rebuttal && typeof resp.rebuttal === 'object') return resp.rebuttal
+  const p = parseContent(resp.content)
+  if (p && (p.defenses || p.concessions)) return p
+  return null
+}
+
+function getCIOSynthesis(resp) {
+  if (resp.cio_synthesis && typeof resp.cio_synthesis === 'object') return resp.cio_synthesis
+  const p = parseContent(resp.content)
+  if (p && p.recommendation) return p
+  return null
 }
 
 function now() {
@@ -1579,6 +1651,13 @@ watch(state, (newState) => {
   line-height: 1.5;
 }
 .risk-bullet { color: rgba(220,38,38,0.8); }
+.challenge-target {
+  color: #666;
+  font-size: 0.72rem;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+}
+.challenge-item { color: #777; padding-left: 8px; }
 .card-rebuttal-toggle {
   font-family: var(--font-mono);
   font-size: 0.7rem;

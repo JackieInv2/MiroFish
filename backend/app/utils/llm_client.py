@@ -278,45 +278,84 @@ class MockProvider:
         }
 
     def _build_round4(self, messages):
-        question, doc = self._extract_context(messages)
-        direction, conviction = self._score_sentiment(doc)
-        sentences = self._extract_sentences(doc, n=4)
+        # For Round 4 the user message is the full transcript, not the original doc.
+        # Extract the question from the user message, then score sentiment on the
+        # transcript itself (which reflects all agents' views).
+        question, transcript = self._extract_context(messages)
+        direction, conviction = self._score_sentiment(transcript)
 
-        # Weighted distribution based on document sentiment
+        # Extract clean document sentences ONLY from Round 1 agent content embedded
+        # in the transcript — skip any line that looks like a prompt/instruction.
+        PROMPT_MARKERS = [
+            "review the full", "produce the final", "respond with", "json object",
+            "full debate transcript", "round name", "initial thesis", "=== ",
+            "--- ", "you are the cio", "you are now",
+        ]
+        def is_clean_sentence(s):
+            sl = s.lower().strip()
+            if len(sl) < 40:
+                return False
+            return not any(marker in sl for marker in PROMPT_MARKERS)
+
+        clean = [s.strip() for s in re.split(r'(?<=[.!?])\s+', transcript.replace('\n', ' '))
+                 if is_clean_sentence(s)]
+
+        # Weighted distribution based on debate sentiment
         if direction == "BUY":
-            dist = {"BUY": round(0.50 + (conviction-5)/20, 2), "HOLD": 0.28, "SELL": 0.12}
+            dist = {"BUY": round(0.50 + (conviction - 5) / 20, 2), "HOLD": 0.28, "SELL": 0.12}
         elif direction == "SELL":
-            dist = {"BUY": 0.12, "HOLD": 0.28, "SELL": round(0.50 + (conviction-5)/20, 2)}
+            dist = {"BUY": 0.12, "HOLD": 0.28, "SELL": round(0.50 + (conviction - 5) / 20, 2)}
         else:
             dist = {"BUY": 0.30, "HOLD": 0.45, "SELL": 0.25}
 
-        # Normalize to sum to 1
         total = sum(dist.values())
-        dist = {k: round(v/total, 2) for k, v in dist.items()}
+        dist = {k: round(v / total, 2) for k, v in dist.items()}
 
-        thesis_base = sentences[0][:200] if sentences else f"Based on the submitted research, the committee analyzed {question[:80]}."
+        conviction_label = 'high' if conviction > 7.5 else 'moderate' if conviction > 5 else 'low'
+        thesis_base = clean[0][:200] if clean else f"The committee analyzed the research on {question[:80]}."
+
+        # Hardened primary risks — direction-aware, never leaking prompt text
+        if direction == "BUY":
+            primary_risks = [
+                f"Macro headwinds or rate environment changes could pressure near-term results",
+                f"Execution risk on key strategic initiatives remains elevated",
+                f"Valuation re-rating risk if growth disappoints relative to consensus",
+            ]
+        elif direction == "SELL":
+            primary_risks = [
+                f"Short squeeze or positive catalyst could cause rapid reversal",
+                f"Timing risk — deterioration may take longer than expected to materialize",
+                f"Structural improvement in fundamentals could invalidate the bear thesis",
+            ]
+        else:
+            primary_risks = [
+                f"Thesis lacks sufficient directional conviction — further research required",
+                f"Macro uncertainty makes near-term positioning difficult to size correctly",
+                f"Catalyst identification is key before initiating any position",
+            ]
+
+        # Replace risk[1] with a sentence from the debate if a clean one exists
+        if len(clean) > 1:
+            primary_risks[1] = clean[1][:120]
+
         return {
             "recommendation": direction,
             "confidence_distribution": dist,
             "consensus_conviction": round(conviction - 0.3, 1),
             "key_thesis": (
-                f"The investment committee recommends {direction} with {'moderate' if 5 < conviction <= 7.5 else 'high' if conviction > 7.5 else 'low'} conviction "
+                f"The investment committee recommends {direction} with {conviction_label} conviction "
                 f"based on analysis of the submitted document. {thesis_base} "
-                f"The debate surfaced {'bullish' if direction=='BUY' else 'bearish' if direction=='SELL' else 'mixed'} signals "
+                f"The debate surfaced {'bullish' if direction == 'BUY' else 'bearish' if direction == 'SELL' else 'mixed'} signals "
                 f"across quantitative, fundamental, and risk dimensions."
             ),
-            "primary_risks": [
-                sentences[1][:120] if len(sentences) > 1 else "Execution risk on the primary thesis driver",
-                sentences[2][:120] if len(sentences) > 2 else "Macro and rate environment may compress multiples",
-                "Tail risk scenarios are not fully priced in by the market",
-            ],
+            "primary_risks": primary_risks,
             "position_sizing_guidance": (
                 f"{'2-4%' if conviction > 7 else '1-2%'} portfolio weight; "
-                f"{'scale in over 4-6 weeks' if direction in ('BUY','SELL') else 'wait for clearer signal before initiating'}"
+                f"{'scale in over 4-6 weeks' if direction in ('BUY', 'SELL') else 'wait for clearer signal before initiating'}"
             ),
             "dissenting_views": [
-                f"Devil's Advocate maintains that the {('SELL' if direction=='BUY' else 'BUY')} case is underweighted — "
-                f"the document contains signals that challenge the {direction} consensus",
+                f"Devil's Advocate maintains that the {('SELL' if direction == 'BUY' else 'BUY')} case is underweighted — "
+                f"the committee should stress-test the {direction} thesis against tail scenarios.",
             ],
             "debate_quality_score": round(7.0 + (conviction % 2) * 0.5, 1),
         }
