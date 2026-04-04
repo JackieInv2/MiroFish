@@ -442,7 +442,9 @@ async function startDebate() {
     }
 
     const res = await apiStartDebate(payload)
-    debateId = res.data?.debate_id || res.data?.data?.debate_id
+    // axios interceptor already unwraps response.data, so res IS the payload
+    debateId = res.debate_id || res.data?.debate_id
+    if (!debateId) throw new Error('No debate_id returned from server')
     addLog(`Debate started · id: ${debateId}`)
     startPolling()
   } catch (err) {
@@ -458,9 +460,9 @@ function startPolling() {
   pollInterval = setInterval(async () => {
     try {
       const statusRes = await getDebateStatus(debateId)
-      const data = statusRes.data?.data || statusRes.data
-      const s = data?.status
-      const p = data?.progress ?? 0
+      // axios interceptor unwraps: statusRes IS { status, progress, ... }
+      const s = statusRes.status || statusRes.data?.status
+      const p = statusRes.progress ?? statusRes.data?.progress ?? 0
 
       progress.value = p
       tick++
@@ -496,7 +498,8 @@ function startPolling() {
 async function fetchResults() {
   try {
     const res = await getDebateResult(debateId)
-    const data = res.data?.data || res.data
+    // result endpoint returns { data: {...}, success: true } — so .data IS the nested payload
+    const data = res.data || res
     debateResults.value = data
     state.value = 'complete'
     activeRound.value = 1
@@ -533,28 +536,51 @@ function resetDebate() {
 
 // ─── D3 Graph ─────────────────────────────────────────────────────────────────
 
-const NODES = Object.keys(AGENT_COLORS).map(id => ({ id }))
+// Pre-positioned in a pentagon so nodes start spread out immediately
+function makeNodes(W, H) {
+  const cx = W / 2, cy = H / 2
+  const r = Math.min(W, H) * 0.30
+  return Object.keys(AGENT_COLORS).map((id, i) => {
+    const angle = (i / 5) * 2 * Math.PI - Math.PI / 2
+    return { id, x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) }
+  })
+}
 
-// Full mesh: every pair of nodes has an edge
-const LINKS = []
-for (let i = 0; i < NODES.length; i++) {
-  for (let j = i + 1; j < NODES.length; j++) {
-    LINKS.push({ source: NODES[i].id, target: NODES[j].id, id: `${NODES[i].id}--${NODES[j].id}` })
+// Full mesh: every pair of nodes has an edge (defined lazily inside initGraph)
+const LINK_PAIRS = []
+const roleKeys = Object.keys(AGENT_COLORS)
+for (let i = 0; i < roleKeys.length; i++) {
+  for (let j = i + 1; j < roleKeys.length; j++) {
+    LINK_PAIRS.push({ sourceId: roleKeys[i], targetId: roleKeys[j], id: `${roleKeys[i]}--${roleKeys[j]}` })
   }
 }
+
+// Live mutable arrays for this simulation instance
+let nodes = []
+let links = []
 
 function initGraph() {
   if (!svgEl.value) return
 
   const container = graphContainer.value
-  const W = container.clientWidth || 600
-  const H = container.clientHeight || 480
+  const W = container.clientWidth || 700
+  const H = container.clientHeight || 520
 
   svgSelection = d3.select(svgEl.value)
-    .attr('width', W)
-    .attr('height', H)
+    .attr('width', '100%')
+    .attr('height', '100%')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMidYMid meet')
 
   svgSelection.selectAll('*').remove()
+
+  // Build fresh node/link arrays with pre-positioned coordinates
+  nodes = makeNodes(W, H)
+  links = LINK_PAIRS.map(p => ({
+    source: p.sourceId,
+    target: p.targetId,
+    id: p.id
+  }))
 
   // Dot grid background
   const defs = svgSelection.append('defs')
@@ -587,7 +613,7 @@ function initGraph() {
   // Links
   linkSelection = g.append('g').attr('class', 'links')
     .selectAll('line')
-    .data(LINKS)
+    .data(links)
     .join('line')
     .attr('class', d => `edge edge-${d.id}`)
     .attr('stroke', '#2A2A2A')
@@ -598,7 +624,7 @@ function initGraph() {
   // Node groups
   nodeSelection = g.append('g').attr('class', 'nodes')
     .selectAll('g')
-    .data(NODES)
+    .data(nodes)
     .join('g')
     .attr('class', d => `node-group node-${d.id}`)
     .style('cursor', 'pointer')
@@ -667,12 +693,14 @@ function initGraph() {
     .attr('pointer-events', 'none')
     .text(d => AGENT_SHORT_NAMES[d.id])
 
-  // Force simulation
-  simulation = d3.forceSimulation(NODES)
-    .force('link', d3.forceLink(LINKS).id(d => d.id).distance(130).strength(0.4))
-    .force('charge', d3.forceManyBody().strength(-320))
-    .force('center', d3.forceCenter(W / 2, H / 2))
-    .force('collide', d3.forceCollide(52))
+  // Force simulation — nodes already pre-positioned, low alpha to avoid flying around
+  simulation = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.id).distance(160).strength(0.25))
+    .force('charge', d3.forceManyBody().strength(-500))
+    .force('center', d3.forceCenter(W / 2, H / 2).strength(0.06))
+    .force('collide', d3.forceCollide(58))
+    .alpha(0.4)
+    .alphaDecay(0.04)
     .on('tick', ticked)
 
   // Zoom
@@ -741,10 +769,15 @@ function startEdgeAnimation() {
     // Highlight a random edge with agent color
     const srcRole = roles[edgeAnimTick % roles.length]
     const color = AGENT_COLORS[srcRole]
-    const relatedLinks = LINKS.filter(l => l.source?.id === srcRole || l.source === srcRole)
+    const relatedLinks = links.filter(l => {
+      const sid = typeof l.source === 'object' ? l.source.id : l.source
+      return sid === srcRole
+    })
     if (relatedLinks.length) {
       const link = relatedLinks[edgeAnimTick % relatedLinks.length]
-      svgSelection?.select(`.edge-${link.id}`)
+      const sid = typeof link.source === 'object' ? link.source.id : link.source
+      const tid = typeof link.target === 'object' ? link.target.id : link.target
+      svgSelection?.select(`.edge-${sid}--${tid}`)
         .attr('stroke', color)
         .attr('stroke-width', 3)
         .attr('stroke-opacity', 1)
@@ -807,13 +840,15 @@ function resetGraphToIdle() {
   startIdleAnimation()
 }
 
-// Handle window resize
+// Handle window resize — reinit graph with new dimensions
 function onResize() {
   if (!graphContainer.value || !svgEl.value) return
-  const W = graphContainer.value.clientWidth
-  const H = graphContainer.value.clientHeight
-  svgSelection?.attr('width', W).attr('height', H)
-  simulation?.force('center', d3.forceCenter(W / 2, H / 2)).alpha(0.3).restart()
+  simulation?.stop()
+  stopIdleAnimation()
+  initGraph()
+  if (state.value === 'running') startEdgeAnimation()
+  else if (state.value === 'complete') updateGraphForResults()
+  else startIdleAnimation()
 }
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
