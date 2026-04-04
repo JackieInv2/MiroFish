@@ -326,6 +326,7 @@ const logsEl = ref(null)
 const fileInput = ref(null)
 
 let pollInterval = null
+let pollTimeout = null
 let edgeAnimInterval = null
 let simulation = null
 let svgSelection = null
@@ -455,27 +456,32 @@ async function startDebate() {
   }
 }
 
+async function pollOnce(tick) {
+  const statusRes = await getDebateStatus(debateId)
+  // axios interceptor unwraps: statusRes IS { status, progress, ... }
+  const s = statusRes.status || statusRes.data?.status
+  const p = statusRes.progress ?? statusRes.data?.progress ?? 0
+
+  progress.value = p
+
+  // Simulate agent activity based on progress
+  const agentRoles = Object.keys(AGENT_COLORS)
+  const activeIdx = Math.min(Math.floor((p / 100) * agentRoles.length), agentRoles.length - 1)
+  agentRoles.forEach((role, i) => {
+    agentStatus.value[role] = i === activeIdx ? 'active' : i < activeIdx ? 'done' : 'standby'
+  })
+
+  if (tick % 4 === 0) addLog(`Polling · status: ${s} · progress: ${p}%`)
+  return s
+}
+
 function startPolling() {
   let tick = 0
-  pollInterval = setInterval(async () => {
+  // Poll immediately after 1s (backend is fast), then every 2s
+  const doPoll = async () => {
     try {
-      const statusRes = await getDebateStatus(debateId)
-      // axios interceptor unwraps: statusRes IS { status, progress, ... }
-      const s = statusRes.status || statusRes.data?.status
-      const p = statusRes.progress ?? statusRes.data?.progress ?? 0
-
-      progress.value = p
       tick++
-
-      // Simulate agent activity based on progress
-      const agentRoles = Object.keys(AGENT_COLORS)
-      const activeIdx = Math.floor((p / 100) * agentRoles.length)
-      agentRoles.forEach((role, i) => {
-        agentStatus.value[role] = i === activeIdx ? 'active' : i < activeIdx ? 'done' : 'standby'
-      })
-
-      if (tick % 3 === 0) addLog(`Polling · status: ${s} · progress: ${p}%`)
-
+      const s = await pollOnce(tick)
       if (s === 'completed') {
         clearInterval(pollInterval)
         pollInterval = null
@@ -492,7 +498,11 @@ function startPolling() {
     } catch (err) {
       addLog(`Poll error: ${err.message}`, 'warn')
     }
-  }, 3000)
+  }
+  // First poll after 1.5s (debate usually completes in ~2s)
+  pollTimeout = setTimeout(doPoll, 1500)
+  // Then every 2s
+  pollInterval = setInterval(doPoll, 2000)
 }
 
 async function fetchResults() {
@@ -528,7 +538,9 @@ function resetDebate() {
   agentStatus.value = {}
   showRebuttal.value = {}
   clearInterval(pollInterval)
+  clearTimeout(pollTimeout)
   pollInterval = null
+  pollTimeout = null
   stopEdgeAnimation()
   resetGraphToIdle()
   addLog('New debate session started')
@@ -863,6 +875,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearInterval(pollInterval)
+  clearTimeout(pollTimeout)
   stopEdgeAnimation()
   stopIdleAnimation()
   simulation?.stop()
