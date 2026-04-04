@@ -10,8 +10,13 @@ import threading
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
 
-from zep_cloud.client import Zep
-from zep_cloud import EpisodeData, EntityEdgeSourceTarget
+try:
+    from zep_cloud.client import Zep
+    from zep_cloud import EpisodeData, EntityEdgeSourceTarget
+except ImportError:
+    Zep = None
+    EpisodeData = None
+    EntityEdgeSourceTarget = None
 
 from ..config import Config
 from ..models.task import TaskManager, TaskStatus

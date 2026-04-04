@@ -21,13 +21,20 @@ from enum import Enum
 from ..config import Config
 from ..utils.llm_client import LLMClient
 from ..utils.logger import get_logger
-from .zep_tools import (
-    ZepToolsService, 
-    SearchResult, 
-    InsightForgeResult, 
-    PanoramaResult,
-    InterviewResult
-)
+try:
+    from .zep_tools import (
+        ZepToolsService,
+        SearchResult,
+        InsightForgeResult,
+        PanoramaResult,
+        InterviewResult
+    )
+except ImportError:
+    ZepToolsService = None
+    SearchResult = None
+    InsightForgeResult = None
+    PanoramaResult = None
+    InterviewResult = None
 
 logger = get_logger('btrate.report_agent')
 

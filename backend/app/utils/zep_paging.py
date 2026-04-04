@@ -10,8 +10,12 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from zep_cloud import InternalServerError
-from zep_cloud.client import Zep
+try:
+    from zep_cloud import InternalServerError
+    from zep_cloud.client import Zep
+except ImportError:
+    InternalServerError = None
+    Zep = None
 
 from .logger import get_logger
 

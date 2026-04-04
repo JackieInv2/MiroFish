@@ -20,7 +20,10 @@ from queue import Queue
 
 from ..config import Config
 from ..utils.logger import get_logger
-from .zep_graph_memory_updater import ZepGraphMemoryManager
+try:
+    from .zep_graph_memory_updater import ZepGraphMemoryManager
+except ImportError:
+    ZepGraphMemoryManager = None
 from .simulation_ipc import SimulationIPCClient, CommandType, IPCResponse
 
 logger = get_logger('btrate.simulation_runner')
