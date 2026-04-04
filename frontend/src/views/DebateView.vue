@@ -91,6 +91,14 @@
               <span v-else class="drop-text file-name">📄 {{ uploadedFile.name }} <button class="clear-file-btn" @click.stop="clearFile">✕</button></span>
             </div>
             <input ref="fileInput" type="file" accept=".pdf,.txt,.md" class="hidden-input" @change="handleFileChange" />
+            <div class="or-divider"><span>OR PASTE TEXT</span></div>
+            <textarea
+              v-model="documentText"
+              class="input-textarea doc-textarea"
+              rows="5"
+              placeholder="Paste research document, earnings report, or investment memo text here..."
+              :disabled="!!uploadedFile"
+            ></textarea>
           </div>
           <button class="start-btn" @click="startDebate" :disabled="!question.trim()">
             START IC DEBATE <span class="btn-arrow">→</span>
@@ -1224,6 +1232,22 @@ watch(state, (newState) => {
 }
 .file-name { color: var(--green); }
 .hidden-input { display: none; }
+.or-divider {
+  text-align: center;
+  margin: 8px 0;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: #444;
+  letter-spacing: 0.1em;
+}
+.doc-textarea {
+  min-height: 80px;
+  font-size: 0.78rem;
+}
+.doc-textarea:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 .start-btn {
   width: 100%;

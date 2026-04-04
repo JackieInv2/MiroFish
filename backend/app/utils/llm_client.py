@@ -63,15 +63,47 @@ class MockProvider:
 
     @staticmethod
     def _extract_context(messages):
-        """Pull question + document snippet from the message list."""
+        """Pull question + document snippet from the message list.
+
+        Tries multiple formats — the prompt may use **Question:** / **Document:**
+        markdown headers, or plain 'Question:' / 'Document:' prefixes, or just
+        the raw user message.
+        """
+        # Get the user message content (where the prompt lives)
+        user_text = ""
+        for m in messages:
+            if m.get("role") == "user":
+                user_text = m.get("content", "")
+                break
         full_text = " ".join(m.get("content", "") for m in messages)
-        # Extract the Question line
-        import re
-        q_match = re.search(r'\*\*Question:\*\*\s*(.+?)\n', full_text)
-        question = q_match.group(1).strip() if q_match else "this investment"
-        # Grab first 3000 chars of Document section
-        doc_match = re.search(r'\*\*Document:\*\*\s*([\s\S]{50,3000})', full_text)
-        doc_snippet = doc_match.group(1)[:3000] if doc_match else full_text[:1000]
+
+        # Extract question — try markdown bold, then plain prefix
+        question = "this investment"
+        for pattern in [
+            r'\*\*Question:\*\*\s*(.+?)(?:\n|$)',
+            r'Question:\s*(.+?)(?:\n|$)',
+        ]:
+            q_match = re.search(pattern, user_text)
+            if q_match:
+                question = q_match.group(1).strip()
+                break
+
+        # Extract document text — try markdown bold, then plain prefix.
+        # Stop at known boundaries: next section header, JSON template, or end.
+        doc_snippet = ""
+        for pattern in [
+            r'\*\*Document:\*\*\s*([\s\S]+?)(?=\nRespond with|\n\{|\*\*Question|\Z)',
+            r'Document:\s*([\s\S]+?)(?=\nRespond with|\n\{|\*\*Question|\Z)',
+        ]:
+            doc_match = re.search(pattern, user_text)
+            if doc_match and len(doc_match.group(1).strip()) > 20:
+                doc_snippet = doc_match.group(1).strip()[:3000]
+                break
+
+        # Fallback: use the full user message (minus system prompt)
+        if not doc_snippet:
+            doc_snippet = user_text[:2000] if user_text else full_text[:1000]
+
         return question, doc_snippet
 
     @staticmethod
@@ -92,14 +124,12 @@ class MockProvider:
     @staticmethod
     def _extract_sentences(text, n=6):
         """Pull the first n non-trivial sentences from the document."""
-        import re
         sents = re.split(r'(?<=[.!?])\s+', text.replace('\n', ' '))
         return [s.strip() for s in sents if len(s.strip()) > 40][:n]
 
     @staticmethod
     def _extract_numbers(text):
         """Find numeric metrics mentioned in the text."""
-        import re
         # Match things like "$45B", "18%", "3.2x", "$12.50"
         return re.findall(r'\$?[\d,]+(?:\.\d+)?(?:[BMK%x]|\s*(?:billion|million|percent))?', text)[:8]
 
