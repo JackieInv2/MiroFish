@@ -1,1577 +1,1619 @@
 <template>
-  <div class="debate-view">
-    <!-- Navigation Bar -->
+  <div class="debate-page">
+    <!-- Navbar -->
     <nav class="navbar">
-      <div class="nav-brand" @click="$router.push('/')">BTRATE</div>
-      <div class="nav-center">Investment Debate Engine</div>
-      <div class="nav-right">
-        <span class="status-pill" :class="statusClass">
-          <span class="status-dot"></span>
-          {{ statusText }}
-        </span>
+      <div class="nav-brand">BTRATE</div>
+      <div class="nav-links">
+        <router-link to="/" class="back-link">← Home</router-link>
+        <a href="https://github.com/JackieInv2/BTRate" target="_blank" class="github-link">GitHub ↗</a>
       </div>
     </nav>
 
-    <div class="main-content">
-      <!-- ===================== START PANEL ===================== -->
-      <section v-if="!debateId" class="start-section">
-        <div class="start-hero">
-          <div class="tag-row">
-            <span class="orange-tag">IC DEBATE</span>
-            <span class="version-text">/ Multi-Agent Consensus</span>
+    <!-- Main layout: graph left + panel right -->
+    <div class="main-layout">
+      <!-- LEFT: D3 Force Graph -->
+      <div class="graph-panel" ref="graphPanel">
+        <div class="graph-header">
+          <span class="graph-label">AGENT NETWORK</span>
+          <span class="graph-status" :class="statusClass">{{ graphStatusText }}</span>
+        </div>
+        <div id="graph-container" ref="graphContainer">
+          <svg id="force-graph" ref="svgEl"></svg>
+          <!-- Node tooltip -->
+          <div class="node-tooltip" v-if="hoveredNode" :style="tooltipStyle">
+            {{ AGENT_NAMES[hoveredNode] }}
           </div>
-          <h1 class="start-title">
-            Upload Research<br>
-            <span class="gradient-text">Start the Debate</span>
-          </h1>
-          <p class="start-desc">
-            Five AI agents — <span class="hl-bold">Quant Analyst</span>, <span class="hl-bold">Fundamental Analyst</span>,
-            <span class="hl-bold">Risk Manager</span>, <span class="hl-bold">Devil's Advocate</span>, and
-            <span class="hl-bold">CIO</span> — will conduct a structured IC-style debate on your investment thesis.
-          </p>
+          <!-- Node detail panel -->
+          <div class="node-detail-card" v-if="selectedAgent && debateResults">
+            <div class="detail-header">
+              <span class="detail-title">{{ AGENT_NAMES[selectedAgent] }}</span>
+              <button class="detail-close" @click="selectedAgent = null">×</button>
+            </div>
+            <div v-if="selectedAgentData" class="detail-body">
+              <div class="detail-direction" :class="selectedAgentData.direction?.toLowerCase()">
+                {{ selectedAgentData.direction }}
+              </div>
+              <div class="detail-conviction">Conviction: {{ selectedAgentData.conviction }}/10</div>
+              <div class="detail-section" v-if="selectedAgentData.key_arguments?.length">
+                <div class="detail-section-title">KEY ARGUMENTS</div>
+                <div v-for="(arg, i) in selectedAgentData.key_arguments.slice(0,2)" :key="i" class="detail-bullet">· {{ arg }}</div>
+              </div>
+              <div class="detail-section" v-if="selectedAgentData.key_risks?.length">
+                <div class="detail-section-title">KEY RISKS</div>
+                <div class="detail-bullet risk">· {{ selectedAgentData.key_risks[0] }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Legend -->
+        <div class="graph-legend">
+          <span v-for="(color, role) in AGENT_COLORS" :key="role" class="legend-item">
+            <span class="legend-dot" :style="{background: color}"></span>
+            {{ AGENT_LABELS[role] }} {{ AGENT_SHORT_NAMES[role] }}
+          </span>
+        </div>
+      </div>
+
+      <!-- RIGHT: Control / Results Panel -->
+      <div class="right-panel">
+        <!-- STATE 1: Input Form -->
+        <div v-if="state === 'idle'" class="input-panel">
+          <div class="panel-title-row">
+            <span class="panel-badge">IC DEBATE ENGINE</span>
+          </div>
+          <div class="input-group">
+            <label class="input-label">01 / INVESTMENT QUESTION</label>
+            <textarea
+              v-model="question"
+              class="input-textarea"
+              rows="4"
+              placeholder="e.g. Should we take a long position in AAPL given current macro conditions?"
+            ></textarea>
+          </div>
+          <div class="input-group">
+            <label class="input-label">02 / RESEARCH DOCUMENT <span class="label-meta">PDF · TXT · MD</span></label>
+            <div
+              class="file-drop-zone"
+              :class="{ 'has-file': uploadedFile, 'drag-over': isDragOver }"
+              @click="triggerFileInput"
+              @dragover.prevent="isDragOver = true"
+              @dragleave="isDragOver = false"
+              @drop.prevent="handleDrop"
+            >
+              <span v-if="!uploadedFile" class="drop-text">Drop file or click to upload</span>
+              <span v-else class="drop-text file-name">📄 {{ uploadedFile.name }}</span>
+            </div>
+            <input ref="fileInput" type="file" accept=".pdf,.txt,.md" class="hidden-input" @change="handleFileChange" />
+          </div>
+          <button class="start-btn" @click="startDebate" :disabled="!question.trim()">
+            START IC DEBATE <span class="btn-arrow">→</span>
+          </button>
         </div>
 
-        <div class="start-form">
-          <div class="console-box">
-            <div class="console-section">
-              <div class="console-header">
-                <span class="console-label">01 / Investment Question</span>
-              </div>
-              <input
-                v-model="question"
-                type="text"
-                class="code-input single-line"
-                placeholder='e.g. "Should we buy AAPL at current levels given Q1 earnings?"'
-              />
+        <!-- STATE 2: Running -->
+        <div v-if="state === 'running'" class="running-panel">
+          <div class="running-header">
+            <span class="running-title">DEBATE IN PROGRESS</span>
+            <div class="spinner"></div>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" :style="{width: progress + '%'}"></div>
+          </div>
+          <div class="round-indicators">
+            <div v-for="r in 4" :key="r" class="round-badge" :class="{ active: progress >= r * 25 }">
+              0{{ r }}
             </div>
+          </div>
+          <div class="running-desc">
+            Running 4 structured IC rounds · Agents converging on recommendation
+          </div>
+          <div class="agent-activity">
+            <div v-for="(color, role) in AGENT_COLORS" :key="role" class="activity-row">
+              <div class="activity-dot" :style="{background: color}" :class="{ pulse: isAgentActive(role) }"></div>
+              <span class="activity-name">{{ AGENT_NAMES[role] }}</span>
+              <span class="activity-status">{{ agentStatus[role] || 'standby' }}</span>
+            </div>
+          </div>
+        </div>
 
-            <div class="console-divider"><span>Research Input</span></div>
-
-            <div class="console-section">
-              <div class="console-header">
-                <span class="console-label">02 / Research Document</span>
-                <span class="console-meta">PDF, TXT, MD</span>
+        <!-- STATE 3: Results -->
+        <div v-if="state === 'complete' && debateResults" class="results-panel">
+          <div class="results-scroll">
+            <!-- Final Recommendation -->
+            <div class="recommendation-block">
+              <div class="rec-badge" :class="debateResults.final_recommendation.recommendation.toLowerCase()">
+                {{ debateResults.final_recommendation.recommendation }}
               </div>
-              <div
-                class="upload-zone"
-                :class="{ 'drag-over': dragOver, 'has-file': !!file }"
-                @dragover.prevent="dragOver = true"
-                @dragleave.prevent="dragOver = false"
-                @drop.prevent="onDrop"
-                @click="$refs.fileInput.click()"
-              >
-                <input ref="fileInput" type="file" accept=".pdf,.txt,.md" hidden @change="onFileSelect" />
-                <div v-if="!file" class="upload-placeholder">
-                  <div class="upload-icon-box">&#8679;</div>
-                  <div class="upload-title">Drop file here or click to browse</div>
+              <div class="rec-scores">
+                <div class="score-item">
+                  <div class="score-value">{{ debateResults.final_recommendation.consensus_conviction }}</div>
+                  <div class="score-label">CONVICTION / 10</div>
                 </div>
-                <div v-else class="file-display">
-                  <span class="file-icon">&#128196;</span>
-                  <span class="file-name">{{ file.name }}</span>
-                  <button class="remove-btn" @click.stop="file = null">&times;</button>
+                <div class="score-divider"></div>
+                <div class="score-item">
+                  <div class="score-value">{{ debateResults.consensus_score?.calibrated_score?.toFixed(3) }}</div>
+                  <div class="score-label">CALIBRATED</div>
+                </div>
+                <div class="score-divider"></div>
+                <div class="score-item">
+                  <div class="score-value">{{ debateResults.final_recommendation.debate_quality_score }}</div>
+                  <div class="score-label">DEBATE QUALITY</div>
                 </div>
               </div>
             </div>
 
-            <div v-if="!file" class="console-section">
-              <div class="console-header">
-                <span class="console-label">&gt;_ Or paste text</span>
-              </div>
-              <textarea
-                v-model="pastedText"
-                class="code-input multi-line"
-                rows="5"
-                placeholder="Paste earnings data, research notes, or financial text here..."
-              ></textarea>
+            <!-- Key Thesis -->
+            <div class="results-section">
+              <div class="section-header">KEY THESIS</div>
+              <p class="thesis-text">{{ debateResults.final_recommendation.key_thesis }}</p>
             </div>
 
-            <div class="console-section btn-section">
-              <button
-                class="start-engine-btn"
-                :disabled="!canStart || loading"
-                @click="startNewDebate"
-              >
-                <span v-if="!loading">Start Debate</span>
-                <span v-else>Initializing...</span>
-                <span class="btn-arrow">&rarr;</span>
-              </button>
-            </div>
-          </div>
-          <p v-if="error" class="error-msg">{{ error }}</p>
-        </div>
-      </section>
-
-      <!-- ===================== ACTIVE DEBATE ===================== -->
-      <section v-else class="debate-section">
-        <!-- Progress Bar -->
-        <div class="progress-container">
-          <div class="progress-track">
-            <div class="progress-fill" :style="{ width: progress + '%' }"></div>
-          </div>
-          <span class="progress-text">{{ progress }}% &mdash; {{ statusText }}</span>
-        </div>
-
-        <!-- ============ MIND MAP ============ -->
-        <div class="mindmap-wrapper">
-          <div class="mindmap">
-            <!-- SVG Connection Lines -->
-            <svg class="mindmap-svg" viewBox="0 0 900 380" preserveAspectRatio="xMidYMid meet">
-              <!-- Document to Agents -->
-              <path d="M450,60 L175,155" class="conn-line" :class="lineClass(1)" />
-              <path d="M450,60 L350,155" class="conn-line" :class="lineClass(1)" />
-              <path d="M450,60 L550,155" class="conn-line" :class="lineClass(1)" />
-              <path d="M450,60 L725,155" class="conn-line" :class="lineClass(1)" />
-              <!-- Cross-examination lines between agents -->
-              <path d="M225,240 L310,240" class="conn-line cross" :class="lineClass(2)" />
-              <path d="M395,240 L505,240" class="conn-line cross" :class="lineClass(2)" />
-              <path d="M595,240 L680,240" class="conn-line cross" :class="lineClass(2)" />
-              <!-- Agents to CIO -->
-              <path d="M175,265 L450,325" class="conn-line" :class="lineClass(4)" />
-              <path d="M350,265 L450,325" class="conn-line" :class="lineClass(4)" />
-              <path d="M550,265 L450,325" class="conn-line" :class="lineClass(4)" />
-              <path d="M725,265 L450,325" class="conn-line" :class="lineClass(4)" />
-            </svg>
-
-            <!-- Document Node -->
-            <div class="mm-node document-node" :class="{ visible: true }">
-              <div class="mm-icon">&#128196;</div>
-              <div class="mm-label">Document Input</div>
-            </div>
-
-            <!-- Agent Nodes -->
-            <div class="mm-node agent-node quant" :class="nodeState('quant_analyst')">
-              <div class="mm-icon-letter">Q</div>
-              <div class="mm-label">Quant Analyst</div>
-              <div class="mm-state">{{ nodeStateText('quant_analyst') }}</div>
-            </div>
-
-            <div class="mm-node agent-node fundamental" :class="nodeState('fundamental_analyst')">
-              <div class="mm-icon-letter">F</div>
-              <div class="mm-label">Fundamental</div>
-              <div class="mm-state">{{ nodeStateText('fundamental_analyst') }}</div>
-            </div>
-
-            <div class="mm-node agent-node risk" :class="nodeState('risk_manager')">
-              <div class="mm-icon-letter">R</div>
-              <div class="mm-label">Risk Manager</div>
-              <div class="mm-state">{{ nodeStateText('risk_manager') }}</div>
-            </div>
-
-            <div class="mm-node agent-node devil" :class="nodeState('devil_advocate')">
-              <div class="mm-icon-letter">D</div>
-              <div class="mm-label">Devil's Advocate</div>
-              <div class="mm-state">{{ nodeStateText('devil_advocate') }}</div>
-            </div>
-
-            <div class="mm-node cio-node" :class="{ visible: activeRound >= 4, thinking: activeRound === 4 && status !== 'completed' }">
-              <div class="mm-icon-letter cio">C</div>
-              <div class="mm-label">CIO / PM</div>
-              <div class="mm-sublabel">Final Verdict</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ============ ROUND CARDS ============ -->
-        <div class="rounds-section">
-          <!-- Round 1: Initial Thesis -->
-          <div v-if="rounds.length >= 1" class="round-card fade-in">
-            <div class="round-header">
-              <span class="round-badge">01</span>
-              <span class="round-title">Initial Thesis</span>
-            </div>
-            <div class="agents-grid">
-              <div
-                v-for="resp in (rounds[0]?.responses || [])"
-                :key="resp.agent_role"
-                class="agent-card"
-                :class="'border-' + agentColor(resp.agent_role)"
-              >
-                <div class="agent-top">
-                  <span class="agent-letter" :class="'bg-' + agentColor(resp.agent_role)">{{ agentIcon(resp.agent_role) }}</span>
-                  <span class="agent-name">{{ resp.agent_name }}</span>
-                  <span class="agent-model">{{ resp.model_used }}</span>
-                </div>
-                <template v-if="resp.thesis">
-                  <div class="direction-badge" :class="dirClass(resp.thesis.direction)">
-                    {{ resp.thesis.direction }}
+            <!-- Confidence Distribution -->
+            <div class="results-section">
+              <div class="section-header">CONFIDENCE DISTRIBUTION</div>
+              <div class="confidence-bars">
+                <div v-for="(val, dir) in debateResults.final_recommendation.confidence_distribution" :key="dir" class="conf-row">
+                  <span class="conf-label" :class="dir.toLowerCase()">{{ dir }}</span>
+                  <div class="conf-track">
+                    <div class="conf-fill" :class="dir.toLowerCase()" :style="{width: (val*100) + '%'}"></div>
                   </div>
-                  <div class="conviction-row">
-                    <span class="conviction-label">Conviction</span>
-                    <span class="conviction-val">{{ resp.thesis.conviction }}/10</span>
-                    <div class="conviction-bar">
-                      <div class="conviction-fill" :style="{ width: (resp.thesis.conviction * 10) + '%' }"></div>
+                  <span class="conf-pct">{{ Math.round(val * 100) }}%</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Round Breakdown -->
+            <div class="results-section">
+              <div class="section-header">ROUND BREAKDOWN</div>
+              <div class="round-tabs">
+                <button v-for="r in debateResults.rounds" :key="r.round_number"
+                  class="round-tab" :class="{active: activeRound === r.round_number}"
+                  @click="activeRound = r.round_number">
+                  Round {{ r.round_number }}
+                </button>
+              </div>
+              <div v-if="currentRound" class="agent-cards">
+                <div v-for="resp in currentRound.responses" :key="resp.agent_role" class="agent-card"
+                  :style="{borderLeftColor: AGENT_COLORS[resp.agent_role] || '#444'}">
+                  <div class="card-header">
+                    <div class="card-agent-info">
+                      <span class="card-label" :style="{background: AGENT_COLORS[resp.agent_role] || '#444'}">
+                        {{ AGENT_LABELS[resp.agent_role] }}
+                      </span>
+                      <span class="card-role">{{ AGENT_NAMES[resp.agent_role] }}</span>
+                    </div>
+                    <div v-if="parseContent(resp.content)" class="card-verdict">
+                      <span class="card-direction" :class="parseContent(resp.content).direction?.toLowerCase()">
+                        {{ parseContent(resp.content).direction }}
+                      </span>
+                      <span class="card-conviction">{{ parseContent(resp.content).conviction }}/10</span>
                     </div>
                   </div>
-                  <div v-if="resp.thesis.key_arguments?.length" class="detail-block">
-                    <div class="detail-title">Key Arguments</div>
-                    <ul><li v-for="(a, i) in resp.thesis.key_arguments" :key="i">{{ a }}</li></ul>
-                  </div>
-                  <div v-if="resp.thesis.key_risks?.length" class="detail-block risks">
-                    <div class="detail-title">Key Risks</div>
-                    <ul><li v-for="(r, i) in resp.thesis.key_risks" :key="i">{{ r }}</li></ul>
-                  </div>
-                  <div v-if="resp.thesis.causal_factors?.length" class="factors-row">
-                    <span
-                      v-for="(f, i) in resp.thesis.causal_factors.slice(0, 4)"
-                      :key="i"
-                      class="factor-chip"
-                    >{{ f.event || f.channel }}</span>
-                  </div>
-                </template>
-                <div v-else class="raw-content">{{ resp.content }}</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Round 2: Cross-Examination -->
-          <div v-if="rounds.length >= 2" class="round-card fade-in">
-            <div class="round-header">
-              <span class="round-badge">02</span>
-              <span class="round-title">Cross-Examination</span>
-            </div>
-            <div class="agents-grid">
-              <div
-                v-for="resp in (rounds[1]?.responses || [])"
-                :key="resp.agent_role"
-                class="agent-card"
-                :class="'border-' + agentColor(resp.agent_role)"
-              >
-                <div class="agent-top">
-                  <span class="agent-letter" :class="'bg-' + agentColor(resp.agent_role)">{{ agentIcon(resp.agent_role) }}</span>
-                  <span class="agent-name">{{ resp.agent_name }}</span>
-                </div>
-                <template v-if="resp.cross_examination">
-                  <div
-                    v-for="(challenges, target) in resp.cross_examination.challenges"
-                    :key="target"
-                    class="challenge-block"
-                  >
-                    <div class="challenge-target">Challenging {{ target }}:</div>
-                    <ul><li v-for="(c, i) in challenges" :key="i">{{ c }}</li></ul>
-                  </div>
-                </template>
-                <div v-else class="raw-content">{{ resp.content }}</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Round 3: Rebuttal -->
-          <div v-if="rounds.length >= 3" class="round-card fade-in">
-            <div class="round-header">
-              <span class="round-badge">03</span>
-              <span class="round-title">Rebuttal &amp; Revised Conviction</span>
-            </div>
-            <div class="agents-grid">
-              <div
-                v-for="resp in (rounds[2]?.responses || [])"
-                :key="resp.agent_role"
-                class="agent-card"
-                :class="'border-' + agentColor(resp.agent_role)"
-              >
-                <div class="agent-top">
-                  <span class="agent-letter" :class="'bg-' + agentColor(resp.agent_role)">{{ agentIcon(resp.agent_role) }}</span>
-                  <span class="agent-name">{{ resp.agent_name }}</span>
-                </div>
-                <template v-if="resp.rebuttal">
-                  <div v-if="resp.rebuttal.updated_direction" class="direction-badge" :class="dirClass(resp.rebuttal.updated_direction)">
-                    {{ resp.rebuttal.updated_direction }}
-                  </div>
-                  <div class="conviction-row">
-                    <span class="conviction-label">Updated Conviction</span>
-                    <span class="conviction-val">{{ resp.rebuttal.updated_conviction }}/10</span>
-                    <div class="conviction-bar">
-                      <div class="conviction-fill" :style="{ width: (resp.rebuttal.updated_conviction * 10) + '%' }"></div>
+                  <div v-if="parseContent(resp.content)" class="card-body">
+                    <div v-if="parseContent(resp.content).key_arguments?.length" class="card-section">
+                      <div class="card-section-title">ARGUMENTS</div>
+                      <div v-for="(a, i) in parseContent(resp.content).key_arguments.slice(0,2)" :key="i" class="card-bullet">· {{ a }}</div>
                     </div>
-                  </div>
-                  <div v-if="resp.rebuttal.defenses?.length" class="detail-block">
-                    <div class="detail-title">Defenses</div>
-                    <ul><li v-for="(d, i) in resp.rebuttal.defenses" :key="i">{{ d }}</li></ul>
-                  </div>
-                  <div v-if="resp.rebuttal.concessions?.length" class="detail-block concessions">
-                    <div class="detail-title">Concessions</div>
-                    <ul><li v-for="(c, i) in resp.rebuttal.concessions" :key="i">{{ c }}</li></ul>
-                  </div>
-                </template>
-                <div v-else class="raw-content">{{ resp.content }}</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Round 4: CIO Synthesis -->
-          <div v-if="rounds.length >= 4" class="round-card cio-round fade-in">
-            <div class="round-header cio-header">
-              <span class="round-badge cio-badge">04</span>
-              <span class="round-title">CIO Synthesis &mdash; Final Verdict</span>
-            </div>
-            <template v-if="cioData">
-              <div class="cio-body">
-                <div class="cio-rec-badge" :class="dirClass(cioData.recommendation)">
-                  {{ cioData.recommendation }}
-                </div>
-                <div class="cio-conviction">
-                  Consensus Conviction: <strong>{{ cioData.consensus_conviction }}/10</strong>
-                </div>
-                <div class="cio-thesis">{{ cioData.key_thesis }}</div>
-
-                <!-- Confidence Distribution Bar -->
-                <div v-if="cioData.confidence_distribution" class="conf-bar-wrapper">
-                  <div class="conf-bar-label">Confidence Distribution</div>
-                  <div class="conf-bar">
-                    <div
-                      v-for="(pct, dir) in cioData.confidence_distribution"
-                      :key="dir"
-                      class="conf-segment"
-                      :class="dir.toLowerCase()"
-                      :style="{ width: (pct * 100) + '%' }"
-                    >
-                      <span v-if="pct > 0.08" class="conf-seg-text">{{ dir }} {{ (pct * 100).toFixed(0) }}%</span>
+                    <div v-if="parseContent(resp.content).key_risks?.length" class="card-section">
+                      <div class="card-section-title risk-title">RISKS</div>
+                      <div class="card-bullet risk-bullet">· {{ parseContent(resp.content).key_risks[0] }}</div>
+                    </div>
+                    <div v-if="resp.rebuttal" class="card-rebuttal-toggle" @click="toggleRebuttal(resp.agent_role)">
+                      {{ showRebuttal[resp.agent_role] ? '▲ Hide rebuttal' : '▼ Show rebuttal' }}
+                    </div>
+                    <div v-if="showRebuttal[resp.agent_role] && resp.rebuttal" class="card-rebuttal">
+                      {{ resp.rebuttal }}
                     </div>
                   </div>
                 </div>
-
-                <div class="cio-columns">
-                  <div v-if="cioData.primary_risks?.length" class="cio-col">
-                    <div class="detail-title">Primary Risks</div>
-                    <ul><li v-for="(r, i) in cioData.primary_risks" :key="i">{{ r }}</li></ul>
-                  </div>
-                  <div v-if="cioData.dissenting_views?.length" class="cio-col dissent">
-                    <div class="detail-title">Dissenting Views</div>
-                    <ul><li v-for="(d, i) in cioData.dissenting_views" :key="i">{{ d }}</li></ul>
-                  </div>
-                </div>
-
-                <div v-if="cioData.position_sizing_guidance" class="cio-sizing">
-                  <span class="sizing-label">Position Sizing:</span> {{ cioData.position_sizing_guidance }}
-                </div>
               </div>
-            </template>
+            </div>
+
+            <!-- Primary Risks -->
+            <div v-if="debateResults.final_recommendation.primary_risks?.length" class="results-section">
+              <div class="section-header">PRIMARY RISKS</div>
+              <div v-for="(r, i) in debateResults.final_recommendation.primary_risks" :key="i" class="risk-item">
+                <span class="risk-num">{{ String(i+1).padStart(2,'0') }}</span>
+                <span class="risk-text">{{ r }}</span>
+              </div>
+            </div>
+
+            <!-- Dissenting Views -->
+            <div v-if="debateResults.final_recommendation.dissenting_views?.length" class="results-section">
+              <div class="section-header">DISSENTING VIEWS</div>
+              <div v-for="(v, i) in debateResults.final_recommendation.dissenting_views" :key="i" class="risk-item">
+                <span class="risk-num">{{ String(i+1).padStart(2,'0') }}</span>
+                <span class="risk-text">{{ v }}</span>
+              </div>
+            </div>
+
+            <button class="new-debate-btn" @click="resetDebate">NEW DEBATE →</button>
           </div>
         </div>
 
-        <!-- ============ FINAL BANNER ============ -->
-        <div v-if="finalRecommendation && status === 'completed'" class="final-banner" :class="dirClass(finalRecommendation.recommendation)">
-          <div class="final-rec">{{ finalRecommendation.recommendation }}</div>
-          <div class="final-thesis">{{ finalRecommendation.key_thesis }}</div>
-          <div v-if="consensusScore" class="final-calibration">
-            Raw Conviction: {{ consensusScore.raw_score }}/10
-            <span class="cal-sep">&bull;</span>
-            Platt-Calibrated: {{ (consensusScore.calibrated_score * 100).toFixed(1) }}%
-          </div>
-          <div v-if="cioData?.debate_quality_score" class="final-quality">
-            Debate Quality: {{ cioData.debate_quality_score.toFixed(1) }}/10
-          </div>
-          <button class="new-debate-btn" @click="resetDebate">New Debate</button>
+        <!-- STATE: Error -->
+        <div v-if="state === 'error'" class="error-panel">
+          <div class="error-icon">⚠</div>
+          <div class="error-title">DEBATE FAILED</div>
+          <div class="error-msg">{{ errorMessage }}</div>
+          <button class="new-debate-btn" @click="resetDebate">TRY AGAIN →</button>
         </div>
+      </div>
+    </div>
 
-        <!-- Error Banner -->
-        <div v-if="debateError" class="error-banner">
-          <strong>Debate Failed:</strong> {{ debateError }}
-          <button class="new-debate-btn small" @click="resetDebate">Try Again</button>
+    <!-- BOTTOM: System Dashboard Log -->
+    <div class="dashboard-strip">
+      <div class="strip-left">
+        <span class="strip-label">SYSTEM DASHBOARD</span>
+      </div>
+      <div class="strip-logs" ref="logsEl">
+        <div v-for="(log, i) in logs" :key="i" class="log-line">
+          <span class="log-time">{{ log.time }}</span>
+          <span class="log-sym" :class="log.type">{{ log.sym }}</span>
+          <span class="log-msg" :class="log.type">{{ log.msg }}</span>
         </div>
-      </section>
+      </div>
+      <div class="strip-right">
+        <span class="strip-session">{{ sessionId }}</span>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted, watch } from 'vue'
-import { startDebate, getDebateStatus, getDebateResult } from '../api/debate'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
+import * as d3 from 'd3'
+import { startDebate as apiStartDebate, getDebateStatus, getDebateResult } from '../api/debate.js'
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const AGENT_COLORS = {
+  quant_analyst: '#2563EB',
+  fundamental_analyst: '#7C3AED',
+  risk_manager: '#DC2626',
+  devil_advocate: '#EA580C',
+  cio: '#D97706',
+}
+
+const AGENT_LABELS = {
+  quant_analyst: 'Q',
+  fundamental_analyst: 'F',
+  risk_manager: 'R',
+  devil_advocate: 'D',
+  cio: 'C',
+}
+
+const AGENT_NAMES = {
+  quant_analyst: 'QUANT ANALYST',
+  fundamental_analyst: 'FUNDAMENTAL ANALYST',
+  risk_manager: 'RISK MANAGER',
+  devil_advocate: "DEVIL'S ADVOCATE",
+  cio: 'CIO',
+}
+
+const AGENT_SHORT_NAMES = {
+  quant_analyst: 'Quant',
+  fundamental_analyst: 'Fund.',
+  risk_manager: 'Risk',
+  devil_advocate: 'Devil',
+  cio: 'CIO',
+}
+
+// ─── State ───────────────────────────────────────────────────────────────────
+
+const state = ref('idle') // idle | running | complete | error
 const question = ref('')
-const file = ref(null)
-const pastedText = ref('')
-const dragOver = ref(false)
-const loading = ref(false)
-const error = ref('')
-const debateId = ref(null)
+const uploadedFile = ref(null)
+const isDragOver = ref(false)
 const progress = ref(0)
-const status = ref('')
-const rounds = ref([])
-const finalRecommendation = ref(null)
-const consensusScore = ref(null)
-const debateError = ref(null)
+const debateResults = ref(null)
+const activeRound = ref(1)
+const selectedAgent = ref(null)
+const hoveredNode = ref(null)
+const tooltipStyle = ref({})
+const showRebuttal = ref({})
+const errorMessage = ref('')
+const agentStatus = ref({})
+const logs = ref([])
+const sessionId = ref(Math.random().toString(16).slice(2, 10).toUpperCase())
 
-let pollTimer = null
+// DOM refs
+const svgEl = ref(null)
+const graphContainer = ref(null)
+const graphPanel = ref(null)
+const logsEl = ref(null)
+const fileInput = ref(null)
 
-const canStart = computed(() => question.value.trim() && (file.value || pastedText.value.trim()))
+let pollInterval = null
+let edgeAnimInterval = null
+let simulation = null
+let svgSelection = null
+let linkSelection = null
+let nodeSelection = null
+let debateId = null
 
-const activeRound = computed(() => {
-  const m = { round_1: 1, round_2: 2, round_3: 3, round_4: 4, completed: 4 }
-  return m[status.value] || 0
-})
+// ─── Computed ─────────────────────────────────────────────────────────────────
 
-const cioData = computed(() => {
-  if (rounds.value.length < 4) return null
-  const r4 = rounds.value[3]
-  if (!r4?.responses?.length) return null
-  return r4.responses[0]?.cio_synthesis || null
-})
+const statusClass = computed(() => ({
+  'status-idle': state.value === 'idle',
+  'status-running': state.value === 'running',
+  'status-complete': state.value === 'complete',
+  'status-error': state.value === 'error',
+}))
 
-const statusText = computed(() => {
-  if (!debateId.value) return 'Ready'
-  const map = {
-    pending: 'Pending',
-    running: 'Running',
-    round_1: 'Round 1: Initial Thesis',
-    round_2: 'Round 2: Cross-Examination',
-    round_3: 'Round 3: Rebuttal',
-    round_4: 'Round 4: CIO Synthesis',
-    completed: 'Completed',
-    failed: 'Failed',
-  }
-  return map[status.value] || status.value
-})
-
-const statusClass = computed(() => {
-  if (status.value === 'completed') return 'success'
-  if (status.value === 'failed') return 'error'
-  if (debateId.value) return 'running'
-  return 'idle'
-})
-
-function agentIcon(role) {
-  const icons = { quant_analyst: 'Q', fundamental_analyst: 'F', risk_manager: 'R', devil_advocate: 'D', cio: 'C' }
-  return icons[role] || '?'
-}
-
-function agentColor(role) {
-  const colors = { quant_analyst: 'blue', fundamental_analyst: 'purple', risk_manager: 'red', devil_advocate: 'deeporange', cio: 'gold' }
-  return colors[role] || 'gray'
-}
-
-function dirClass(dir) {
-  if (!dir) return ''
-  const d = dir.toLowerCase()
-  if (d === 'buy') return 'dir-buy'
-  if (d === 'sell') return 'dir-sell'
-  return 'dir-hold'
-}
-
-function lineClass(minRound) {
-  const r = activeRound.value
-  const isComplete = status.value === 'completed'
-  if (r < minRound) return ''
-  if (isComplete) return 'done'
-  return 'active'
-}
-
-function nodeState(role) {
-  const r = activeRound.value
-  if (r === 0) return ''
-  if (r >= 1) {
-    const isThinking = (r <= 3 && status.value !== 'completed')
-    return { visible: true, thinking: isThinking && r === 1 }
-  }
+const graphStatusText = computed(() => {
+  if (state.value === 'idle') return '● READY'
+  if (state.value === 'running') return '◈ RUNNING'
+  if (state.value === 'complete') return '✓ COMPLETE'
+  if (state.value === 'error') return '⚠ ERROR'
   return ''
+})
+
+const currentRound = computed(() => {
+  if (!debateResults.value?.rounds) return null
+  return debateResults.value.rounds.find(r => r.round_number === activeRound.value) || debateResults.value.rounds[0]
+})
+
+const selectedAgentData = computed(() => {
+  if (!selectedAgent.value || !debateResults.value?.rounds) return null
+  const allResps = debateResults.value.rounds.flatMap(r => r.responses)
+  const last = allResps.filter(r => r.agent_role === selectedAgent.value).pop()
+  if (!last) return null
+  return parseContent(last.content)
+})
+
+// ─── Utility ──────────────────────────────────────────────────────────────────
+
+function parseContent(str) {
+  if (!str) return null
+  try {
+    if (typeof str === 'object') return str
+    return JSON.parse(str)
+  } catch {
+    return null
+  }
 }
 
-function nodeStateText(role) {
-  const r = activeRound.value
-  if (r === 0) return 'Waiting'
-  if (status.value === 'completed') return 'Done'
-  if (r === 1) return 'Analyzing...'
-  if (r === 2) return 'Debating...'
-  if (r === 3) return 'Rebutting...'
-  if (r === 4) return 'Reviewing...'
-  return ''
+function now() {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}.${String(d.getMilliseconds()).padStart(3,'0')}`
 }
 
-function onFileSelect(e) {
-  file.value = e.target.files[0] || null
+function addLog(msg, type = 'info') {
+  const syms = { info: '├─', success: '✓', warn: '⚠', error: '✗' }
+  logs.value.push({ time: now(), sym: syms[type] || '├─', msg, type })
+  nextTick(() => {
+    if (logsEl.value) logsEl.value.scrollLeft = logsEl.value.scrollWidth
+  })
 }
 
-function onDrop(e) {
-  dragOver.value = false
-  const f = e.dataTransfer.files[0]
-  if (f) file.value = f
+function isAgentActive(role) {
+  return state.value === 'running' && agentStatus.value[role] === 'active'
 }
 
-function resetDebate() {
-  debateId.value = null
+function toggleRebuttal(role) {
+  showRebuttal.value[role] = !showRebuttal.value[role]
+}
+
+// ─── File handling ────────────────────────────────────────────────────────────
+
+function triggerFileInput() {
+  fileInput.value?.click()
+}
+
+function handleFileChange(e) {
+  uploadedFile.value = e.target.files[0] || null
+  if (uploadedFile.value) addLog(`File loaded · ${uploadedFile.value.name}`)
+}
+
+function handleDrop(e) {
+  isDragOver.value = false
+  const file = e.dataTransfer.files[0]
+  if (file) {
+    uploadedFile.value = file
+    addLog(`File dropped · ${file.name}`)
+  }
+}
+
+// ─── Debate Flow ──────────────────────────────────────────────────────────────
+
+async function startDebate() {
+  if (!question.value.trim()) return
+  state.value = 'running'
   progress.value = 0
-  status.value = ''
-  rounds.value = []
-  finalRecommendation.value = null
-  consensusScore.value = null
-  debateError.value = null
-  question.value = ''
-  file.value = null
-  pastedText.value = ''
-  error.value = ''
-}
+  debateResults.value = null
+  selectedAgent.value = null
+  agentStatus.value = {}
+  showRebuttal.value = {}
 
-async function startNewDebate() {
-  loading.value = true
-  error.value = ''
+  const q = question.value.trim()
+  addLog(`Starting IC debate · "${q.slice(0, 50)}${q.length > 50 ? '...' : ''}"`)
+  startEdgeAnimation()
+
   try {
     let payload
-    if (file.value) {
+    if (uploadedFile.value) {
       payload = new FormData()
-      payload.append('file', file.value)
-      payload.append('question', question.value)
+      payload.append('file', uploadedFile.value)
+      payload.append('question', q)
     } else {
-      payload = { question: question.value, text: pastedText.value }
+      payload = { question: q, text: q }
     }
-    const res = await startDebate(payload)
-    debateId.value = res.debate_id
-    status.value = 'running'
+
+    const res = await apiStartDebate(payload)
+    debateId = res.data?.debate_id || res.data?.data?.debate_id
+    addLog(`Debate started · id: ${debateId}`)
     startPolling()
-  } catch (e) {
-    error.value = e.message || 'Failed to start debate'
-  } finally {
-    loading.value = false
+  } catch (err) {
+    state.value = 'error'
+    errorMessage.value = err?.response?.data?.error || err.message || 'Failed to start debate'
+    addLog(`Error: ${errorMessage.value}`, 'error')
+    stopEdgeAnimation()
   }
 }
 
 function startPolling() {
-  pollTimer = setInterval(async () => {
+  let tick = 0
+  pollInterval = setInterval(async () => {
     try {
-      const st = await getDebateStatus(debateId.value)
-      status.value = st.status
-      progress.value = st.progress
+      const statusRes = await getDebateStatus(debateId)
+      const data = statusRes.data?.data || statusRes.data
+      const s = data?.status
+      const p = data?.progress ?? 0
 
-      const res = await getDebateResult(debateId.value)
-      if (res.data) {
-        rounds.value = res.data.rounds || []
-        finalRecommendation.value = res.data.final_recommendation
-        consensusScore.value = res.data.consensus_score
-        debateError.value = res.data.error
-      }
+      progress.value = p
+      tick++
 
-      if (st.status === 'completed' || st.status === 'failed') {
-        clearInterval(pollTimer)
-        pollTimer = null
+      // Simulate agent activity based on progress
+      const agentRoles = Object.keys(AGENT_COLORS)
+      const activeIdx = Math.floor((p / 100) * agentRoles.length)
+      agentRoles.forEach((role, i) => {
+        agentStatus.value[role] = i === activeIdx ? 'active' : i < activeIdx ? 'done' : 'standby'
+      })
+
+      if (tick % 3 === 0) addLog(`Polling · status: ${s} · progress: ${p}%`)
+
+      if (s === 'completed') {
+        clearInterval(pollInterval)
+        pollInterval = null
+        addLog('Debate complete · fetching results', 'success')
+        await fetchResults()
+      } else if (s === 'error') {
+        clearInterval(pollInterval)
+        pollInterval = null
+        state.value = 'error'
+        errorMessage.value = 'Debate engine reported an error'
+        addLog('Debate engine error', 'error')
+        stopEdgeAnimation()
       }
-    } catch (e) {
-      console.error('Polling error:', e)
+    } catch (err) {
+      addLog(`Poll error: ${err.message}`, 'warn')
     }
-  }, 2000)
+  }, 3000)
 }
 
+async function fetchResults() {
+  try {
+    const res = await getDebateResult(debateId)
+    const data = res.data?.data || res.data
+    debateResults.value = data
+    state.value = 'complete'
+    activeRound.value = 1
+    stopEdgeAnimation()
+    const rec = data.final_recommendation?.recommendation
+    const conv = data.final_recommendation?.consensus_conviction
+    addLog(`Recommendation: ${rec} · conviction: ${conv}/10`, 'success')
+    await nextTick()
+    updateGraphForResults()
+  } catch (err) {
+    state.value = 'error'
+    errorMessage.value = err.message
+    addLog(`Failed to fetch results: ${err.message}`, 'error')
+    stopEdgeAnimation()
+  }
+}
+
+function resetDebate() {
+  state.value = 'idle'
+  question.value = ''
+  uploadedFile.value = null
+  debateResults.value = null
+  selectedAgent.value = null
+  progress.value = 0
+  debateId = null
+  agentStatus.value = {}
+  showRebuttal.value = {}
+  clearInterval(pollInterval)
+  pollInterval = null
+  stopEdgeAnimation()
+  resetGraphToIdle()
+  addLog('New debate session started')
+}
+
+// ─── D3 Graph ─────────────────────────────────────────────────────────────────
+
+const NODES = Object.keys(AGENT_COLORS).map(id => ({ id }))
+
+// Full mesh: every pair of nodes has an edge
+const LINKS = []
+for (let i = 0; i < NODES.length; i++) {
+  for (let j = i + 1; j < NODES.length; j++) {
+    LINKS.push({ source: NODES[i].id, target: NODES[j].id, id: `${NODES[i].id}--${NODES[j].id}` })
+  }
+}
+
+function initGraph() {
+  if (!svgEl.value) return
+
+  const container = graphContainer.value
+  const W = container.clientWidth || 600
+  const H = container.clientHeight || 480
+
+  svgSelection = d3.select(svgEl.value)
+    .attr('width', W)
+    .attr('height', H)
+
+  svgSelection.selectAll('*').remove()
+
+  // Dot grid background
+  const defs = svgSelection.append('defs')
+  const pattern = defs.append('pattern')
+    .attr('id', 'dot-grid')
+    .attr('width', 30)
+    .attr('height', 30)
+    .attr('patternUnits', 'userSpaceOnUse')
+  pattern.append('circle')
+    .attr('cx', 3).attr('cy', 3).attr('r', 1)
+    .attr('fill', 'rgba(255,255,255,0.04)')
+
+  svgSelection.append('rect')
+    .attr('width', W).attr('height', H)
+    .attr('fill', 'url(#dot-grid)')
+
+  // Arrow marker for directed edges
+  defs.append('marker')
+    .attr('id', 'arrow')
+    .attr('viewBox', '0 -4 8 8')
+    .attr('refX', 36).attr('refY', 0)
+    .attr('markerWidth', 6).attr('markerHeight', 6)
+    .attr('orient', 'auto')
+    .append('path')
+    .attr('d', 'M0,-4L8,0L0,4')
+    .attr('fill', '#3A3A3A')
+
+  const g = svgSelection.append('g')
+
+  // Links
+  linkSelection = g.append('g').attr('class', 'links')
+    .selectAll('line')
+    .data(LINKS)
+    .join('line')
+    .attr('class', d => `edge edge-${d.id}`)
+    .attr('stroke', '#2A2A2A')
+    .attr('stroke-width', 1.5)
+    .attr('stroke-opacity', 0.7)
+    .attr('marker-end', 'url(#arrow)')
+
+  // Node groups
+  nodeSelection = g.append('g').attr('class', 'nodes')
+    .selectAll('g')
+    .data(NODES)
+    .join('g')
+    .attr('class', d => `node-group node-${d.id}`)
+    .style('cursor', 'pointer')
+    .call(d3.drag()
+      .on('start', dragStarted)
+      .on('drag', dragged)
+      .on('end', dragEnded)
+    )
+    .on('mouseenter', (event, d) => {
+      hoveredNode.value = d.id
+      const rect = graphContainer.value.getBoundingClientRect()
+      const x = event.clientX - rect.left + 12
+      const y = event.clientY - rect.top - 8
+      tooltipStyle.value = { left: x + 'px', top: y + 'px' }
+      d3.select(`.node-${d.id} circle.main-circle`)
+        .attr('filter', `drop-shadow(0 0 8px ${AGENT_COLORS[d.id]})`)
+    })
+    .on('mouseleave', (event, d) => {
+      hoveredNode.value = null
+      d3.select(`.node-${d.id} circle.main-circle`)
+        .attr('filter', null)
+    })
+    .on('click', (event, d) => {
+      selectedAgent.value = selectedAgent.value === d.id ? null : d.id
+    })
+
+  // Outer glow ring
+  nodeSelection.append('circle')
+    .attr('class', 'glow-ring')
+    .attr('r', 34)
+    .attr('fill', 'none')
+    .attr('stroke', d => AGENT_COLORS[d.id])
+    .attr('stroke-width', 0.5)
+    .attr('stroke-opacity', 0.3)
+
+  // Main circle
+  nodeSelection.append('circle')
+    .attr('class', 'main-circle')
+    .attr('r', 26)
+    .attr('fill', d => AGENT_COLORS[d.id])
+    .attr('fill-opacity', 0.9)
+    .attr('stroke', d => AGENT_COLORS[d.id])
+    .attr('stroke-width', 2)
+    .attr('stroke-opacity', 0.5)
+
+  // Label
+  nodeSelection.append('text')
+    .attr('text-anchor', 'middle')
+    .attr('dominant-baseline', 'central')
+    .attr('fill', '#FFF')
+    .attr('font-family', "'JetBrains Mono', monospace")
+    .attr('font-size', '14px')
+    .attr('font-weight', '700')
+    .attr('pointer-events', 'none')
+    .text(d => AGENT_LABELS[d.id])
+
+  // Small role label below node
+  nodeSelection.append('text')
+    .attr('class', 'node-sublabel')
+    .attr('text-anchor', 'middle')
+    .attr('dominant-baseline', 'central')
+    .attr('dy', 42)
+    .attr('fill', '#666')
+    .attr('font-family', "'JetBrains Mono', monospace")
+    .attr('font-size', '9px')
+    .attr('pointer-events', 'none')
+    .text(d => AGENT_SHORT_NAMES[d.id])
+
+  // Force simulation
+  simulation = d3.forceSimulation(NODES)
+    .force('link', d3.forceLink(LINKS).id(d => d.id).distance(130).strength(0.4))
+    .force('charge', d3.forceManyBody().strength(-320))
+    .force('center', d3.forceCenter(W / 2, H / 2))
+    .force('collide', d3.forceCollide(52))
+    .on('tick', ticked)
+
+  // Zoom
+  const zoom = d3.zoom()
+    .scaleExtent([0.5, 3])
+    .on('zoom', (event) => g.attr('transform', event.transform))
+  svgSelection.call(zoom)
+
+  startIdleAnimation()
+}
+
+function ticked() {
+  if (!linkSelection || !nodeSelection) return
+  linkSelection
+    .attr('x1', d => d.source.x)
+    .attr('y1', d => d.source.y)
+    .attr('x2', d => d.target.x)
+    .attr('y2', d => d.target.y)
+
+  nodeSelection.attr('transform', d => `translate(${d.x},${d.y})`)
+}
+
+function dragStarted(event, d) {
+  if (!event.active) simulation.alphaTarget(0.3).restart()
+  d.fx = d.x; d.fy = d.y
+}
+function dragged(event, d) {
+  d.fx = event.x; d.fy = event.y
+}
+function dragEnded(event, d) {
+  if (!event.active) simulation.alphaTarget(0)
+  d.fx = null; d.fy = null
+}
+
+// Idle pulse animation on nodes
+let idleAnimTimer = null
+function startIdleAnimation() {
+  let tick = 0
+  idleAnimTimer = setInterval(() => {
+    tick++
+    svgSelection?.selectAll('.main-circle')
+      .transition().duration(800).ease(d3.easeSinInOut)
+      .attr('fill-opacity', 0.6 + 0.3 * Math.sin(tick * 0.8))
+  }, 900)
+}
+
+function stopIdleAnimation() {
+  clearInterval(idleAnimTimer)
+  idleAnimTimer = null
+  svgSelection?.selectAll('.main-circle').attr('fill-opacity', 0.9)
+}
+
+// Edge animation while debate is running
+let edgeAnimTick = 0
+function startEdgeAnimation() {
+  stopIdleAnimation()
+  const roles = Object.keys(AGENT_COLORS)
+  edgeAnimInterval = setInterval(() => {
+    edgeAnimTick++
+    // Reset all edges
+    svgSelection?.selectAll('.edge')
+      .attr('stroke', '#2A2A2A')
+      .attr('stroke-width', 1.5)
+      .attr('stroke-opacity', 0.7)
+
+    // Highlight a random edge with agent color
+    const srcRole = roles[edgeAnimTick % roles.length]
+    const color = AGENT_COLORS[srcRole]
+    const relatedLinks = LINKS.filter(l => l.source?.id === srcRole || l.source === srcRole)
+    if (relatedLinks.length) {
+      const link = relatedLinks[edgeAnimTick % relatedLinks.length]
+      svgSelection?.select(`.edge-${link.id}`)
+        .attr('stroke', color)
+        .attr('stroke-width', 3)
+        .attr('stroke-opacity', 1)
+    }
+
+    // Ripple on a node
+    const rippleRole = roles[(edgeAnimTick + 2) % roles.length]
+    const nodeG = svgSelection?.select(`.node-${rippleRole}`)
+    if (nodeG) {
+      nodeG.append('circle')
+        .attr('r', 28)
+        .attr('fill', 'none')
+        .attr('stroke', AGENT_COLORS[rippleRole])
+        .attr('stroke-width', 2)
+        .attr('stroke-opacity', 0.8)
+        .transition().duration(800).ease(d3.easeExpOut)
+        .attr('r', 55)
+        .attr('stroke-opacity', 0)
+        .remove()
+    }
+  }, 600)
+}
+
+function stopEdgeAnimation() {
+  clearInterval(edgeAnimInterval)
+  edgeAnimInterval = null
+}
+
+function updateGraphForResults() {
+  if (!debateResults.value || !svgSelection) return
+  stopIdleAnimation()
+  stopEdgeAnimation()
+
+  const rec = debateResults.value.final_recommendation?.recommendation
+  const edgeColor = rec === 'BUY' ? '#16A34A' : rec === 'SELL' ? '#DC2626' : '#D97706'
+  const conv = debateResults.value.final_recommendation?.consensus_conviction || 5
+  const widthScale = d3.scaleLinear().domain([1, 10]).range([1, 6])
+
+  // Color all edges by recommendation
+  svgSelection.selectAll('.edge')
+    .transition().duration(600)
+    .attr('stroke', edgeColor)
+    .attr('stroke-width', widthScale(conv))
+    .attr('stroke-opacity', 0.6)
+
+  // Glow on all nodes
+  svgSelection.selectAll('.main-circle')
+    .transition().duration(400)
+    .attr('fill-opacity', 1)
+}
+
+function resetGraphToIdle() {
+  if (!svgSelection) return
+  svgSelection.selectAll('.edge')
+    .attr('stroke', '#2A2A2A')
+    .attr('stroke-width', 1.5)
+    .attr('stroke-opacity', 0.7)
+  svgSelection.selectAll('.main-circle')
+    .attr('fill-opacity', 0.9)
+  startIdleAnimation()
+}
+
+// Handle window resize
+function onResize() {
+  if (!graphContainer.value || !svgEl.value) return
+  const W = graphContainer.value.clientWidth
+  const H = graphContainer.value.clientHeight
+  svgSelection?.attr('width', W).attr('height', H)
+  simulation?.force('center', d3.forceCenter(W / 2, H / 2)).alpha(0.3).restart()
+}
+
+// ─── Lifecycle ────────────────────────────────────────────────────────────────
+
+onMounted(() => {
+  addLog('System initialized · BTRate v0.1', 'success')
+  nextTick(() => {
+    initGraph()
+    window.addEventListener('resize', onResize)
+  })
+})
+
 onUnmounted(() => {
-  if (pollTimer) clearInterval(pollTimer)
+  clearInterval(pollInterval)
+  stopEdgeAnimation()
+  stopIdleAnimation()
+  simulation?.stop()
+  window.removeEventListener('resize', onResize)
+})
+
+watch(state, (newState) => {
+  if (newState === 'idle') {
+    resetGraphToIdle()
+  }
 })
 </script>
 
 <style scoped>
-/* =================== DESIGN TOKENS =================== */
-:root {
+/* ── Variables ── */
+.debate-page {
   --black: #000000;
-  --white: #FFFFFF;
+  --dark: #0A0A0A;
+  --surface: #111111;
+  --surface2: #1A1A1A;
+  --border: #2A2A2A;
+  --white: #FAFAFA;
+  --gray: #888888;
   --orange: #FF4500;
-  --bg: #FFFFFF;
-  --bg-alt: #FAFAFA;
-  --gray-text: #666666;
-  --gray-light: #F5F5F5;
-  --border: #E5E5E5;
+  --blue: #2563EB;
+  --purple: #7C3AED;
+  --red: #DC2626;
+  --gold: #D97706;
+  --devil: #EA580C;
+  --green: #16A34A;
   --font-mono: 'JetBrains Mono', monospace;
-  --font-sans: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
-}
+  --font-sans: 'Space Grotesk', system-ui, sans-serif;
 
-* { box-sizing: border-box; }
-
-.debate-view {
-  min-height: 100vh;
-  background: var(--bg);
-  font-family: var(--font-sans);
-  color: var(--black);
-}
-
-/* =================== NAVBAR =================== */
-.navbar {
-  height: 60px;
-  background: var(--black);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--dark);
   color: var(--white);
+  font-family: var(--font-sans);
+  overflow: hidden;
+}
+
+/* ── Navbar ── */
+.navbar {
+  height: 52px;
+  background: var(--black);
+  border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 40px;
+  padding: 0 32px;
+  flex-shrink: 0;
+  z-index: 10;
 }
-
 .nav-brand {
   font-family: var(--font-mono);
   font-weight: 800;
-  letter-spacing: 1px;
-  font-size: 1.2rem;
-  cursor: pointer;
+  font-size: 1rem;
+  letter-spacing: 2px;
+  color: var(--white);
+}
+.nav-links { display: flex; align-items: center; gap: 20px; }
+.back-link, .github-link {
+  color: var(--gray);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
   transition: color 0.2s;
 }
-.nav-brand:hover { color: var(--orange); }
+.back-link:hover { color: var(--orange); }
+.github-link:hover { color: var(--white); }
 
-.nav-center {
+/* ── Main Layout ── */
+.main-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Graph Panel ── */
+.graph-panel {
+  flex: 0 0 55%;
+  display: flex;
+  flex-direction: column;
+  background: var(--dark);
+  border-right: 1px solid var(--border);
+  position: relative;
+}
+.graph-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.graph-label {
   font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color: #888;
+  font-size: 0.72rem;
+  color: var(--gray);
+  letter-spacing: 1px;
+}
+.graph-status {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 1px;
+}
+.status-idle { color: var(--gray); }
+.status-running { color: var(--orange); animation: blink-status 1.2s step-end infinite; }
+.status-complete { color: var(--green); }
+.status-error { color: var(--red); }
+@keyframes blink-status {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+#graph-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+#force-graph {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: var(--dark);
+}
+
+/* Node tooltip */
+.node-tooltip {
+  position: absolute;
+  background: rgba(10,10,10,0.9);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--white);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 20;
   letter-spacing: 1px;
 }
 
-.nav-right {
-  display: flex;
-  align-items: center;
+/* Node detail card */
+.node-detail-card {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 240px;
+  background: rgba(10,10,10,0.95);
+  border: 1px solid var(--border);
+  padding: 16px;
+  z-index: 20;
 }
-
-.status-pill {
+.detail-header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 6px;
+  margin-bottom: 12px;
+}
+.detail-title {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: #888;
-  padding: 4px 12px;
-  border: 1px solid #333;
-  border-radius: 20px;
+  color: var(--white);
+  letter-spacing: 1px;
+  font-weight: 700;
 }
+.detail-close {
+  background: none;
+  border: none;
+  color: var(--gray);
+  cursor: pointer;
+  font-size: 1.2rem;
+  padding: 0;
+  line-height: 1;
+}
+.detail-close:hover { color: var(--white); }
+.detail-direction {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.detail-direction.buy { color: var(--green); }
+.detail-direction.sell { color: var(--red); }
+.detail-direction.hold { color: var(--gold); }
+.detail-conviction {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--gray);
+  margin-bottom: 12px;
+}
+.detail-section { margin-bottom: 10px; }
+.detail-section-title {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: #555;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.detail-bullet {
+  font-size: 0.78rem;
+  color: #aaa;
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+.detail-bullet.risk { color: var(--red); opacity: 0.85; }
 
-.status-dot {
+/* Legend */
+.graph-legend {
+  display: flex;
+  gap: 16px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--gray);
+}
+.legend-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #555;
+  flex-shrink: 0;
 }
 
-.status-pill.running .status-dot { background: var(--orange); animation: pulse 1.2s infinite; }
-.status-pill.success .status-dot { background: #4caf50; }
-.status-pill.error .status-dot { background: #f44336; }
-.status-pill.running { color: var(--orange); border-color: var(--orange); }
-.status-pill.success { color: #4caf50; border-color: #4caf50; }
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-
-/* =================== MAIN CONTENT =================== */
-.main-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 40px 40px 80px;
-}
-
-/* =================== START SECTION =================== */
-.start-section {
-  display: flex;
-  gap: 60px;
-  align-items: flex-start;
-}
-
-.start-hero {
-  flex: 0.9;
-  padding-top: 20px;
-}
-
-.tag-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 24px;
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-}
-
-.orange-tag {
-  background: var(--orange);
-  color: var(--white);
-  padding: 4px 10px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  font-size: 0.75rem;
-}
-
-.version-text {
-  color: #999;
-  font-weight: 500;
-}
-
-.start-title {
-  font-size: 3.5rem;
-  line-height: 1.15;
-  font-weight: 500;
-  margin: 0 0 30px 0;
-  letter-spacing: -1.5px;
-  color: var(--black);
-}
-
-.gradient-text {
-  background: linear-gradient(90deg, #000 0%, #444 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  display: inline-block;
-}
-
-.start-desc {
-  font-size: 1rem;
-  line-height: 1.8;
-  color: var(--gray-text);
-  max-width: 500px;
-}
-
-.hl-bold {
-  color: var(--black);
-  font-weight: 600;
-}
-
-.start-form {
-  flex: 1.1;
-}
-
-/* Console Form (matches Home.vue) */
-.console-box {
-  border: 1px solid #CCC;
-  padding: 8px;
-}
-
-.console-section {
-  padding: 20px;
-}
-
-.console-section.btn-section {
-  padding-top: 0;
-}
-
-.console-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 12px;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: #666;
-}
-
-.console-meta {
-  color: #aaa;
-}
-
-.console-divider {
-  display: flex;
-  align-items: center;
-  margin: 4px 0;
-}
-
-.console-divider::before,
-.console-divider::after {
-  content: '';
+/* ── Right Panel ── */
+.right-panel {
   flex: 1;
-  height: 1px;
-  background: #EEE;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--dark);
 }
 
-.console-divider span {
-  padding: 0 15px;
+/* ── Input Panel ── */
+.input-panel {
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+.panel-title-row { display: flex; align-items: center; gap: 12px; }
+.panel-badge {
   font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: #BBB;
+  font-size: 0.72rem;
+  color: var(--orange);
+  border: 1px solid var(--orange);
+  padding: 3px 10px;
   letter-spacing: 1px;
 }
-
-.code-input {
-  width: 100%;
-  border: 1px solid #DDD;
-  background: var(--bg-alt);
+.input-group { display: flex; flex-direction: column; gap: 8px; }
+.input-label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: #555;
+  letter-spacing: 1px;
+}
+.label-meta {
+  margin-left: 8px;
+  color: #444;
+}
+.input-textarea {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--white);
   padding: 14px 16px;
   font-family: var(--font-mono);
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   line-height: 1.6;
-  outline: none;
-  color: var(--black);
-  transition: border-color 0.2s;
-}
-
-.code-input:focus {
-  border-color: var(--orange);
-}
-
-.code-input.multi-line {
   resize: vertical;
-  min-height: 120px;
+  outline: none;
+  transition: border-color 0.2s;
+  border-radius: 0;
 }
+.input-textarea::placeholder { color: #444; }
+.input-textarea:focus { border-color: var(--orange); }
 
-/* Upload Zone */
-.upload-zone {
-  border: 1px dashed #CCC;
-  min-height: 120px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.file-drop-zone {
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  padding: 24px 16px;
+  text-align: center;
   cursor: pointer;
   transition: all 0.2s;
-  background: var(--bg-alt);
 }
-
-.upload-zone:hover,
-.upload-zone.drag-over {
+.file-drop-zone:hover, .file-drop-zone.drag-over {
+  background: var(--surface2);
   border-color: var(--orange);
-  background: #FFF5F0;
 }
-
-.upload-placeholder {
-  text-align: center;
-}
-
-.upload-icon-box {
-  width: 36px;
-  height: 36px;
-  border: 1px solid #DDD;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 10px;
-  color: #999;
-  font-size: 18px;
-}
-
-.upload-title {
-  font-size: 0.85rem;
-  color: var(--gray-text);
-}
-
-.file-display {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px;
-}
-
-.file-icon { font-size: 1.2rem; }
-.file-name {
+.file-drop-zone.has-file { border-color: var(--green); border-style: solid; }
+.drop-text {
   font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color: var(--orange);
-  font-weight: 600;
+  font-size: 0.8rem;
+  color: #555;
 }
+.file-name { color: var(--green); }
+.hidden-input { display: none; }
 
-.remove-btn {
-  background: none;
-  border: none;
-  font-size: 1.3rem;
-  color: #999;
-  cursor: pointer;
-  line-height: 1;
-}
-.remove-btn:hover { color: #f44336; }
-
-/* Start Button */
-.start-engine-btn {
+.start-btn {
   width: 100%;
-  background: var(--black);
-  color: var(--white);
+  background: var(--orange);
+  color: #fff;
   border: none;
   padding: 18px 24px;
   font-family: var(--font-mono);
   font-weight: 700;
   font-size: 1rem;
+  letter-spacing: 2px;
+  cursor: pointer;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  letter-spacing: 1px;
-}
-
-.start-engine-btn:not(:disabled):hover {
-  background: var(--orange);
-}
-
-.start-engine-btn:disabled {
-  background: #E5E5E5;
-  color: #999;
-  cursor: not-allowed;
-}
-
-.btn-arrow { font-size: 1.2rem; }
-
-.error-msg {
-  color: #f44336;
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  margin-top: 12px;
-}
-
-/* =================== DEBATE SECTION =================== */
-.debate-section { }
-
-/* Progress */
-.progress-container {
-  margin-bottom: 32px;
-}
-
-.progress-track {
-  height: 4px;
-  background: var(--border);
-  border-radius: 2px;
-  overflow: hidden;
-  margin-bottom: 8px;
-}
-
-.progress-fill {
-  height: 100%;
-  background: var(--orange);
-  transition: width 0.5s ease;
-}
-
-.progress-text {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--gray-text);
-}
-
-/* =================== MIND MAP =================== */
-.mindmap-wrapper {
-  margin-bottom: 40px;
-  background: var(--bg-alt);
-  border: 1px solid var(--border);
-  padding: 24px 16px;
-  overflow: hidden;
-}
-
-.mindmap {
-  position: relative;
-  width: 100%;
-  max-width: 860px;
-  height: 360px;
-  margin: 0 auto;
-}
-
-.mindmap-svg {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
-.conn-line {
-  fill: none;
-  stroke: #DDD;
-  stroke-width: 1.5;
-  transition: stroke 0.5s, stroke-dashoffset 0.5s;
-}
-
-.conn-line.active {
-  stroke: var(--orange);
-  stroke-width: 2;
-  stroke-dasharray: 8 4;
-  animation: dash-flow 1.5s linear infinite;
-}
-
-.conn-line.done {
-  stroke: #CCCCCC;
-  stroke-width: 2;
-  opacity: 1;
-}
-
-.conn-line.cross {
-  stroke-dasharray: 4 4;
-}
-
-@keyframes dash-flow {
-  to { stroke-dashoffset: -24; }
-}
-
-/* Mind-map Nodes */
-.mm-node {
-  position: absolute;
-  background: var(--white);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px 16px;
-  text-align: center;
-  opacity: 0;
-  transform: translateY(10px);
-  transition: opacity 0.5s, transform 0.5s;
-  min-width: 120px;
-}
-
-.mm-node.visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.mm-node.thinking {
-  animation: node-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes node-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 69, 0, 0.2); }
-  50% { box-shadow: 0 0 0 8px rgba(255, 69, 0, 0); }
-}
-
-/* Document node - top center */
-.document-node {
-  top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  opacity: 1;
-  border-color: var(--orange);
-}
-
-.mm-icon {
-  font-size: 1.5rem;
-  margin-bottom: 4px;
-}
-
-.mm-label {
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--black);
-  white-space: nowrap;
-}
-
-.mm-sublabel {
-  font-family: var(--font-mono);
-  font-size: 0.6rem;
-  color: var(--gray-text);
-}
-
-.mm-state {
-  font-family: var(--font-mono);
-  font-size: 0.6rem;
-  color: var(--orange);
-  margin-top: 2px;
-}
-
-/* Agent nodes - row */
-.agent-node {
-  top: 130px;
-}
-
-.agent-node.quant { left: 5%; }
-.agent-node.fundamental { left: 27%; }
-.agent-node.risk { left: 52%; }
-.agent-node.devil { left: 74%; }
-
-.mm-icon-letter {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-mono);
-  font-weight: 800;
-  font-size: 0.9rem;
-  color: var(--white);
-  margin: 0 auto 6px;
-}
-
-.quant .mm-icon-letter { background: #2196f3; }
-.fundamental .mm-icon-letter { background: #9c27b0; }
-.risk .mm-icon-letter { background: #f44336; }
-.devil .mm-icon-letter { background: #E64A19; }
-.mm-icon-letter.cio { background: #F9A825; width: 36px; height: 36px; font-size: 1rem; }
-
-/* CIO node - bottom center */
-.cio-node {
-  top: 275px;
-  left: 50%;
-  transform: translateX(-50%);
-  border-color: #F9A825;
-  border-width: 2px;
-  min-width: 140px;
-}
-
-.cio-node.visible {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
-/* =================== ROUND CARDS =================== */
-.rounds-section {
-  margin-bottom: 32px;
-}
-
-.round-card {
-  background: var(--white);
-  border: 1px solid var(--border);
-  margin-bottom: 24px;
-  overflow: hidden;
-}
-
-.fade-in {
-  animation: fadeSlideIn 0.5s ease-out;
-}
-
-@keyframes fadeSlideIn {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.round-header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-alt);
-}
-
-.round-badge {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 0.8rem;
-  color: var(--black);
-  opacity: 0.3;
-}
-
-.round-title {
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: var(--black);
-}
-
-.cio-header {
-  background: #FFFDE7;
-  border-bottom-color: #F9A825;
-}
-
-.cio-badge {
-  color: #F9A825;
-  opacity: 1;
-}
-
-/* Agent Cards in Rounds */
-.agents-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 16px;
-  padding: 20px 24px;
-}
-
-.agent-card {
-  background: var(--bg-alt);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 16px;
-  border-left: 3px solid #DDD;
-}
-
-.border-blue { border-left-color: #2196f3; }
-.border-purple { border-left-color: #9c27b0; }
-.border-red { border-left-color: #f44336; }
-.border-deeporange { border-left-color: #E64A19; }
-.border-gold { border-left-color: #F9A825; }
-
-.agent-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.agent-letter {
-  width: 26px;
-  height: 26px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 0.75rem;
-  color: var(--white);
-}
-
-.bg-blue { background: #2196f3; }
-.bg-purple { background: #9c27b0; }
-.bg-red { background: #f44336; }
-.bg-deeporange { background: #E64A19; }
-.bg-gold { background: #F9A825; }
-
-.agent-name {
-  font-weight: 600;
-  font-size: 0.85rem;
-}
-
-.agent-model {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  color: #aaa;
-  margin-left: auto;
-}
-
-/* Direction Badges */
-.direction-badge {
-  display: inline-block;
-  padding: 3px 12px;
-  border-radius: 3px;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 0.75rem;
-  margin-bottom: 10px;
-  letter-spacing: 0.5px;
-}
-
-.dir-buy { background: #E8F5E9; color: #2E7D32; border: 1px solid #A5D6A7; }
-.dir-sell { background: #FFEBEE; color: #C62828; border: 1px solid #EF9A9A; }
-.dir-hold { background: #FFF3E0; color: #E65100; border: 1px solid #FFCC02; }
-
-/* Conviction Bar */
-.conviction-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  font-size: 0.8rem;
-}
-
-.conviction-label {
-  color: var(--gray-text);
-  font-size: 0.75rem;
-}
-
-.conviction-val {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 0.8rem;
-  min-width: 40px;
-}
-
-.conviction-bar {
-  flex: 1;
-  height: 4px;
-  background: var(--border);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.conviction-fill {
-  height: 100%;
-  background: var(--orange);
-  transition: width 0.5s ease;
-  border-radius: 2px;
-}
-
-/* Detail Blocks */
-.detail-block {
-  margin-bottom: 10px;
-}
-
-.detail-title {
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--gray-text);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-}
-
-.detail-block ul,
-.cio-col ul {
-  margin: 0;
-  padding-left: 16px;
-}
-
-.detail-block li,
-.cio-col li {
-  font-size: 0.8rem;
-  line-height: 1.6;
-  color: #444;
-  margin-bottom: 2px;
-}
-
-.detail-block.risks li { color: #C62828; }
-.detail-block.concessions li { color: #E65100; font-style: italic; }
-
-/* Factor Chips */
-.factors-row {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+  transition: background 0.2s, transform 0.1s;
   margin-top: 8px;
 }
+.start-btn:hover:not(:disabled) { background: #CC3700; }
+.start-btn:active:not(:disabled) { transform: translateY(1px); }
+.start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-arrow { font-size: 1.2rem; }
 
-.factor-chip {
+/* ── Running Panel ── */
+.running-panel {
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  height: 100%;
+  box-sizing: border-box;
+}
+.running-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.running-title {
   font-family: var(--font-mono);
-  font-size: 0.65rem;
-  padding: 2px 8px;
-  background: #F5F5F5;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  color: var(--gray-text);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--orange);
 }
-
-/* Challenge Block */
-.challenge-block {
-  margin-bottom: 12px;
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--orange);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-.challenge-target {
+.progress-bar-track {
+  height: 3px;
+  background: var(--surface2);
+  position: relative;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--orange);
+  transition: width 0.4s ease;
+  box-shadow: 0 0 8px var(--orange);
+}
+.round-indicators {
+  display: flex;
+  gap: 10px;
+}
+.round-badge {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  font-weight: 600;
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  color: #444;
+  letter-spacing: 1px;
+  transition: all 0.3s;
+}
+.round-badge.active {
+  border-color: var(--orange);
   color: var(--orange);
+  background: rgba(255,69,0,0.08);
+}
+.running-desc {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: #555;
+  line-height: 1.6;
+}
+.agent-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--border);
+  padding: 20px;
+}
+.activity-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.activity-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: opacity 0.3s;
+}
+.activity-dot.pulse {
+  opacity: 1;
+  animation: dot-pulse 0.8s ease-in-out infinite;
+}
+@keyframes dot-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.5); box-shadow: 0 0 6px currentColor; }
+}
+.activity-name {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--white);
+  flex: 1;
+  letter-spacing: 0.5px;
+}
+.activity-status {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: #555;
+}
+
+/* ── Results Panel ── */
+.results-panel {
+  flex: 1;
+  overflow: hidden;
+}
+.results-scroll {
+  height: 100%;
+  overflow-y: auto;
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  box-sizing: border-box;
+}
+.results-scroll::-webkit-scrollbar { width: 4px; }
+.results-scroll::-webkit-scrollbar-track { background: transparent; }
+.results-scroll::-webkit-scrollbar-thumb { background: var(--border); }
+
+.recommendation-block {
+  border: 1px solid var(--border);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.rec-badge {
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 4px;
+  padding: 10px 24px;
+  display: inline-block;
+  align-self: flex-start;
+}
+.rec-badge.buy { background: var(--green); color: #fff; }
+.rec-badge.sell { background: var(--red); color: #fff; }
+.rec-badge.hold { background: var(--gold); color: #fff; }
+
+.rec-scores {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border);
+}
+.score-item {
+  flex: 1;
+  padding: 14px 16px;
+  text-align: center;
+}
+.score-divider {
+  width: 1px;
+  background: var(--border);
+}
+.score-value {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--white);
   margin-bottom: 4px;
 }
-
-.challenge-block ul {
-  margin: 0;
-  padding-left: 16px;
-}
-
-.challenge-block li {
-  font-size: 0.8rem;
-  line-height: 1.5;
-  color: #444;
-}
-
-/* =================== CIO ROUND =================== */
-.cio-round {
-  border-color: #F9A825;
-  border-width: 2px;
-}
-
-.cio-body {
-  padding: 24px 32px;
-}
-
-.cio-rec-badge {
-  display: inline-block;
-  padding: 6px 20px;
-  border-radius: 4px;
+.score-label {
   font-family: var(--font-mono);
-  font-weight: 800;
-  font-size: 1.1rem;
-  margin-bottom: 12px;
+  font-size: 0.65rem;
+  color: #555;
   letter-spacing: 1px;
 }
 
-.cio-conviction {
-  font-size: 0.9rem;
-  color: var(--gray-text);
-  margin-bottom: 16px;
+.results-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-
-.cio-conviction strong {
-  color: var(--black);
-}
-
-.cio-thesis {
-  font-size: 1rem;
-  line-height: 1.7;
-  color: #333;
-  margin-bottom: 20px;
-  border-left: 3px solid var(--orange);
-  padding-left: 16px;
-}
-
-/* Confidence Distribution Bar */
-.conf-bar-wrapper {
-  margin-bottom: 24px;
-}
-
-.conf-bar-label {
+.section-header {
   font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: var(--gray-text);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 8px;
+  color: #555;
+  letter-spacing: 2px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+.thesis-text {
+  font-size: 0.9rem;
+  color: #bbb;
+  line-height: 1.7;
+  margin: 0;
 }
 
-.conf-bar {
-  display: flex;
-  height: 28px;
-  border-radius: 4px;
+/* Confidence bars */
+.confidence-bars { display: flex; flex-direction: column; gap: 10px; }
+.conf-row { display: flex; align-items: center; gap: 10px; }
+.conf-label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  width: 38px;
+  flex-shrink: 0;
+}
+.conf-label.buy { color: var(--green); }
+.conf-label.sell { color: var(--red); }
+.conf-label.hold { color: var(--gold); }
+.conf-track {
+  flex: 1;
+  height: 6px;
+  background: var(--surface2);
   overflow: hidden;
 }
+.conf-fill {
+  height: 100%;
+  transition: width 0.6s ease;
+}
+.conf-fill.buy { background: var(--green); }
+.conf-fill.sell { background: var(--red); }
+.conf-fill.hold { background: var(--gold); }
+.conf-pct {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--gray);
+  width: 32px;
+  text-align: right;
+}
 
-.conf-segment {
+/* Round tabs */
+.round-tabs { display: flex; gap: 6px; }
+.round-tab {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 5px 14px;
+  background: none;
+  border: 1px solid var(--border);
+  color: #555;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 1px;
+}
+.round-tab:hover { border-color: var(--gray); color: var(--gray); }
+.round-tab.active { border-color: var(--orange); color: var(--orange); background: rgba(255,69,0,0.08); }
+
+/* Agent cards */
+.agent-cards { display: flex; flex-direction: column; gap: 10px; }
+.agent-card {
+  background: #0D0D0D;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  padding: 14px 16px;
+}
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.card-agent-info { display: flex; align-items: center; gap: 10px; }
+.card-label {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: width 0.5s ease;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
 }
-
-.conf-segment.buy { background: #A5D6A7; color: #1B5E20; }
-.conf-segment.hold { background: #FFE082; color: #E65100; }
-.conf-segment.sell { background: #EF9A9A; color: #B71C1C; }
-
-.conf-seg-text {
+.card-role {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--white);
+  letter-spacing: 0.5px;
+}
+.card-verdict { display: flex; align-items: center; gap: 8px; }
+.card-direction {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+}
+.card-direction.buy { color: var(--green); border: 1px solid var(--green); }
+.card-direction.sell { color: var(--red); border: 1px solid var(--red); }
+.card-direction.hold { color: var(--gold); border: 1px solid var(--gold); }
+.card-conviction {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--gray);
+}
+.card-body { display: flex; flex-direction: column; gap: 8px; }
+.card-section { display: flex; flex-direction: column; gap: 4px; }
+.card-section-title {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: #444;
+  letter-spacing: 1px;
+}
+.risk-title { color: rgba(220,38,38,0.6); }
+.card-bullet {
+  font-size: 0.8rem;
+  color: #888;
+  line-height: 1.5;
+}
+.risk-bullet { color: rgba(220,38,38,0.8); }
+.card-rebuttal-toggle {
   font-family: var(--font-mono);
   font-size: 0.7rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.cio-columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  margin-bottom: 16px;
-}
-
-.cio-col.dissent {
-  border-left: 2px solid var(--border);
-  padding-left: 16px;
-}
-
-.cio-col.dissent li {
-  color: #777;
-  font-style: italic;
-}
-
-.cio-sizing {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: var(--gray-text);
-  padding: 10px 14px;
-  background: var(--bg-alt);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
-
-.sizing-label {
-  font-weight: 700;
-  color: var(--black);
-}
-
-/* Raw / fallback content */
-.raw-content {
-  white-space: pre-wrap;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: #888;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-/* =================== FINAL BANNER =================== */
-.final-banner {
-  text-align: center;
-  padding: 40px 32px;
-  border-radius: 8px;
-  margin-top: 32px;
-  border: 2px solid;
-}
-
-.final-banner.dir-buy {
-  background: linear-gradient(135deg, #E8F5E9 0%, #FFFFFF 100%);
-  border-color: #4CAF50;
-}
-
-.final-banner.dir-sell {
-  background: linear-gradient(135deg, #FFEBEE 0%, #FFFFFF 100%);
-  border-color: #EF5350;
-}
-
-.final-banner.dir-hold {
-  background: linear-gradient(135deg, #FFF3E0 0%, #FFFFFF 100%);
-  border-color: #FF9800;
-}
-
-.final-rec {
-  font-family: var(--font-mono);
-  font-size: 2.5rem;
-  font-weight: 800;
-  letter-spacing: 3px;
-  margin-bottom: 12px;
-}
-
-.dir-buy .final-rec { color: #2E7D32; }
-.dir-sell .final-rec { color: #C62828; }
-.dir-hold .final-rec { color: #E65100; }
-
-.final-thesis {
-  font-size: 1rem;
-  line-height: 1.6;
   color: #555;
-  max-width: 600px;
-  margin: 0 auto 16px;
+  cursor: pointer;
+  margin-top: 4px;
+  transition: color 0.2s;
 }
-
-.final-calibration {
-  font-family: var(--font-mono);
+.card-rebuttal-toggle:hover { color: var(--gray); }
+.card-rebuttal {
   font-size: 0.8rem;
-  color: var(--gray-text);
-  margin-bottom: 6px;
+  color: #666;
+  line-height: 1.6;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 4px;
 }
 
-.cal-sep {
-  margin: 0 8px;
-  color: #CCC;
+/* Risk items */
+.risk-item {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
 }
-
-.final-quality {
+.risk-num {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: #999;
-  margin-bottom: 20px;
+  font-size: 0.72rem;
+  color: #444;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.risk-text {
+  font-size: 0.85rem;
+  color: #888;
+  line-height: 1.6;
 }
 
 .new-debate-btn {
+  width: 100%;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--gray);
+  padding: 14px;
   font-family: var(--font-mono);
-  font-weight: 700;
   font-size: 0.85rem;
-  background: var(--black);
-  color: var(--white);
-  border: none;
-  padding: 12px 32px;
   cursor: pointer;
   letter-spacing: 1px;
-  transition: background 0.2s;
+  transition: all 0.2s;
+  margin-top: 8px;
+}
+.new-debate-btn:hover {
+  border-color: var(--orange);
+  color: var(--orange);
+  background: rgba(255,69,0,0.05);
 }
 
-.new-debate-btn:hover { background: var(--orange); }
-
-.new-debate-btn.small {
-  padding: 8px 20px;
-  font-size: 0.75rem;
-  margin-left: 16px;
+/* ── Error Panel ── */
+.error-panel {
+  padding: 48px 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+.error-icon {
+  font-size: 2rem;
+  color: var(--red);
+}
+.error-title {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  color: var(--red);
+  letter-spacing: 2px;
+}
+.error-msg {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.6;
+  max-width: 340px;
 }
 
-/* Error Banner */
-.error-banner {
-  background: #FFF5F5;
-  border: 1px solid #EF5350;
-  border-radius: 6px;
-  padding: 16px 24px;
-  color: #C62828;
-  font-size: 0.9rem;
-  margin-top: 16px;
+/* ── System Dashboard Strip ── */
+.dashboard-strip {
+  height: 88px;
+  background: #050505;
+  border-top: 1px solid #1A1A1A;
   display: flex;
   align-items: center;
+  padding: 0 16px;
+  gap: 16px;
+  flex-shrink: 0;
 }
-
-/* =================== RESPONSIVE =================== */
-@media (max-width: 1024px) {
-  .start-section {
-    flex-direction: column;
-  }
-
-  .start-hero {
-    padding-right: 0;
-  }
-
-  .start-title {
-    font-size: 2.5rem;
-  }
-
-  .agents-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .cio-columns {
-    grid-template-columns: 1fr;
-  }
-
-  .mindmap-wrapper {
-    display: none;
-  }
+.strip-left, .strip-right {
+  flex-shrink: 0;
 }
+.strip-label {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: #333;
+  letter-spacing: 2px;
+  writing-mode: horizontal-tb;
+}
+.strip-session {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: #333;
+  letter-spacing: 1px;
+}
+.strip-logs {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 80px;
+  scrollbar-width: thin;
+  scrollbar-color: #222 transparent;
+}
+.strip-logs::-webkit-scrollbar { height: 3px; width: 3px; }
+.strip-logs::-webkit-scrollbar-thumb { background: #222; }
 
-@media (max-width: 640px) {
-  .main-content {
-    padding: 20px 16px 60px;
-  }
+.log-line {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+.log-time { color: #444; flex-shrink: 0; }
+.log-sym { flex-shrink: 0; }
+.log-msg { color: #666; }
+.log-sym.success, .log-msg.success { color: #16A34A; }
+.log-sym.warn, .log-msg.warn { color: #D97706; }
+.log-sym.error, .log-msg.error { color: #DC2626; }
 
-  .navbar {
-    padding: 0 16px;
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .main-layout { flex-direction: column; }
+  .graph-panel {
+    flex: 0 0 40vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
   }
-
-  .agents-grid {
-    grid-template-columns: 1fr;
-  }
+  .dashboard-strip { display: none; }
 }
 </style>

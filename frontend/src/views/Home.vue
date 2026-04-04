@@ -38,11 +38,60 @@
         </div>
         
         <div class="hero-right">
-          <!-- Logo 区域 -->
-          <div class="logo-container">
-            <img src="../assets/logo/BTRate_logo_left.jpeg" alt="BTRate Logo" class="hero-logo" />
+          <!-- Agent Network SVG Preview -->
+          <div class="svg-preview-container">
+            <svg viewBox="0 0 400 320" xmlns="http://www.w3.org/2000/svg" class="agent-preview-svg">
+              <!-- Dot grid background -->
+              <defs>
+                <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+                  <circle cx="2" cy="2" r="1" fill="rgba(0,0,0,0.08)"/>
+                </pattern>
+              </defs>
+              <rect width="400" height="320" fill="url(#dots)" rx="4"/>
+              <!-- Edges -->
+              <line x1="200" y1="80" x2="310" y2="155" stroke="#ddd" stroke-width="1" stroke-opacity="0.6"/>
+              <line x1="200" y1="80" x2="270" y2="255" stroke="#ddd" stroke-width="1" stroke-opacity="0.6"/>
+              <line x1="200" y1="80" x2="130" y2="255" stroke="#ddd" stroke-width="1" stroke-opacity="0.6"/>
+              <line x1="200" y1="80" x2="90" y2="155" stroke="#ddd" stroke-width="1" stroke-opacity="0.6"/>
+              <line x1="310" y1="155" x2="270" y2="255" stroke="#ddd" stroke-width="1" stroke-opacity="0.4"/>
+              <line x1="270" y1="255" x2="130" y2="255" stroke="#ddd" stroke-width="1" stroke-opacity="0.4"/>
+              <line x1="130" y1="255" x2="90" y2="155" stroke="#ddd" stroke-width="1" stroke-opacity="0.4"/>
+              <line x1="90" y1="155" x2="310" y2="155" stroke="#ddd" stroke-width="1" stroke-opacity="0.4"/>
+              <line x1="310" y1="155" x2="130" y2="255" stroke="#ddd" stroke-width="1" stroke-opacity="0.3"/>
+              <line x1="90" y1="155" x2="270" y2="255" stroke="#ddd" stroke-width="1" stroke-opacity="0.3"/>
+              <!-- CIO center node -->
+              <g class="svg-node svg-node-cio">
+                <circle cx="200" cy="80" r="26" fill="#D97706" opacity="0.92"/>
+                <text x="200" y="80" text-anchor="middle" dominant-baseline="central" fill="white" font-family="'JetBrains Mono',monospace" font-size="13" font-weight="700">C</text>
+                <text x="200" y="113" text-anchor="middle" fill="#999" font-family="'JetBrains Mono',monospace" font-size="9">CIO</text>
+              </g>
+              <!-- Quant node -->
+              <g class="svg-node svg-node-q">
+                <circle cx="310" cy="155" r="26" fill="#2563EB" opacity="0.92"/>
+                <text x="310" y="155" text-anchor="middle" dominant-baseline="central" fill="white" font-family="'JetBrains Mono',monospace" font-size="13" font-weight="700">Q</text>
+                <text x="310" y="188" text-anchor="middle" fill="#999" font-family="'JetBrains Mono',monospace" font-size="9">Quant</text>
+              </g>
+              <!-- Devil node -->
+              <g class="svg-node svg-node-d">
+                <circle cx="270" cy="255" r="26" fill="#EA580C" opacity="0.92"/>
+                <text x="270" y="255" text-anchor="middle" dominant-baseline="central" fill="white" font-family="'JetBrains Mono',monospace" font-size="13" font-weight="700">D</text>
+                <text x="270" y="288" text-anchor="middle" fill="#999" font-family="'JetBrains Mono',monospace" font-size="9">Devil</text>
+              </g>
+              <!-- Fundamental node -->
+              <g class="svg-node svg-node-f">
+                <circle cx="130" cy="255" r="26" fill="#7C3AED" opacity="0.92"/>
+                <text x="130" y="255" text-anchor="middle" dominant-baseline="central" fill="white" font-family="'JetBrains Mono',monospace" font-size="13" font-weight="700">F</text>
+                <text x="130" y="288" text-anchor="middle" fill="#999" font-family="'JetBrains Mono',monospace" font-size="9">Fund.</text>
+              </g>
+              <!-- Risk node -->
+              <g class="svg-node svg-node-r">
+                <circle cx="90" cy="155" r="26" fill="#DC2626" opacity="0.92"/>
+                <text x="90" y="155" text-anchor="middle" dominant-baseline="central" fill="white" font-family="'JetBrains Mono',monospace" font-size="13" font-weight="700">R</text>
+                <text x="90" y="188" text-anchor="middle" fill="#999" font-family="'JetBrains Mono',monospace" font-size="9">Risk</text>
+              </g>
+            </svg>
           </div>
-          
+
           <button class="scroll-down-btn" @click="scrollToBottom">
             ↓
           </button>
@@ -111,8 +160,8 @@
               <div class="workflow-item">
                 <span class="step-num">05</span>
                 <div class="step-info">
-                  <div class="step-title">Mind Map View</div>
-                  <div class="step-desc">Interactive SVG visualization of the full debate tree</div>
+                  <div class="step-title">Agent Graph View</div>
+                  <div class="step-desc">D3 force-directed visualization of the IC debate network</div>
                 </div>
               </div>
             </div>
@@ -386,17 +435,32 @@ const goToDebate = () => {
   align-items: flex-end;
 }
 
-.logo-container {
+.svg-preview-container {
   width: 100%;
   display: flex;
   justify-content: flex-end;
-  padding-right: 40px;
+  padding-right: 20px;
 }
 
-.hero-logo {
-  max-width: 500px; /* 调整logo大小 */
+.agent-preview-svg {
+  max-width: 380px;
   width: 100%;
+  border: 1px solid #E5E5E5;
+  border-radius: 4px;
 }
+
+/* SVG node float animations */
+.svg-node-cio { animation: float-cio 3s ease-in-out infinite; }
+.svg-node-q   { animation: float-q   3.4s ease-in-out infinite; }
+.svg-node-f   { animation: float-f   2.8s ease-in-out infinite; }
+.svg-node-r   { animation: float-r   3.2s ease-in-out infinite; }
+.svg-node-d   { animation: float-d   3.6s ease-in-out infinite; }
+
+@keyframes float-cio { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+@keyframes float-q   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
+@keyframes float-f   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
+@keyframes float-r   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+@keyframes float-d   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
 
 .scroll-down-btn {
   width: 40px;
