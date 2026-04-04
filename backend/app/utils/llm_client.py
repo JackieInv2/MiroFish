@@ -21,103 +21,296 @@ logger = logging.getLogger("btrate.llm")
 # ---------------------------------------------------------------------------
 
 class MockProvider:
-    """Mock provider for demo/testing — returns realistic canned responses."""
+    """
+    Document-aware mock provider — extracts real signals from the submitted
+    document/question and generates a contextually relevant debate.
 
-    _MOCK_RESPONSES = {
-        1: {
-            "direction": "BUY",
-            "conviction": 7.5,
-            "key_arguments": [
-                "Strong revenue growth of 15% YoY driven by services segment expansion",
-                "Gross margins expanding to 46.2% indicating pricing power and operational efficiency",
-                "Free cash flow generation of $110B provides significant capital return capacity"
-            ],
-            "key_risks": [
-                "China revenue exposure (~18%) creates geopolitical and regulatory risk",
-                "Hardware replacement cycles lengthening could pressure unit volumes"
-            ],
-            "price_target": "$210",
-            "expected_return": "15-20% upside over 12 months",
-            "time_horizon": "12 months",
-            "causal_factors": [
-                {
-                    "event": "Services revenue acceleration",
-                    "channel": "Recurring revenue and margin expansion",
-                    "direction": "bullish",
-                    "magnitude": "high",
-                    "confidence": 0.85,
-                    "time_horizon": "medium_term"
-                }
-            ]
+    Used when DEMO_MODE=true or when no real API key is configured.
+    Each call produces unique, document-grounded output instead of canned AAPL boilerplate.
+    """
+
+    # Per-agent persona for round 1 framing
+    _AGENT_ANGLES = {
+        "quant": {
+            "focus": "valuation multiples, revenue CAGR, margin trajectory, momentum signals",
+            "style": "data-driven and precise",
         },
-        2: {
-            "challenges": {
-                "Quant Analyst": [
-                    "Your P/E multiple assumption doesn't account for the current rate environment — at 5% risk-free, a 28x forward P/E is harder to justify",
-                    "The momentum signal you cited has historically mean-reverted within 3 months for mega-caps"
-                ],
-                "Fundamental Analyst": [
-                    "Services growth is decelerating quarter over quarter — 15% YoY masks sequential slowdown",
-                    "Management's capex guidance suggests margin compression ahead, contradicting your margin expansion thesis"
-                ],
-                "Risk Manager": [
-                    "Your tail risk analysis ignores the concentration risk in the top 5 holdings of major indices",
-                    "Correlation assumptions during a market stress event would significantly underestimate drawdown"
-                ]
-            }
+        "fundamental": {
+            "focus": "business model quality, competitive moat, management execution, TAM",
+            "style": "qualitative and long-term oriented",
         },
-        3: {
-            "defenses": [
-                "The P/E premium is justified by the 2x earnings growth rate relative to the S&P 500 — PEG ratio of 1.4x is reasonable for a high-quality compounder",
-                "Sequential deceleration is seasonal — comparing Q1 vs Q4 always shows this pattern; the YoY trend is what matters"
-            ],
-            "concessions": [
-                "I concede that China risk is under-appreciated — I'm reducing my conviction from 8 to 7 to account for potential regulatory actions"
-            ],
-            "updated_conviction": 7.0,
-            "updated_direction": "BUY"
+        "risk": {
+            "focus": "tail risks, liquidity, max drawdown, concentration",
+            "style": "conservative and thorough",
         },
-        4: {
-            "recommendation": "BUY",
-            "confidence_distribution": {"BUY": 0.65, "HOLD": 0.25, "SELL": 0.10},
-            "consensus_conviction": 7.2,
-            "key_thesis": "The investment committee recommends a BUY with moderate conviction. Strong fundamentals, expanding margins, and robust cash flow generation support the thesis, though China exposure and valuation stretch in a higher-rate environment warrant position sizing discipline.",
-            "primary_risks": [
-                "China regulatory and geopolitical risk impacting ~18% of revenue",
-                "Multiple compression if interest rates remain elevated longer than expected",
-                "Hardware cycle elongation reducing upgrade revenue"
-            ],
-            "position_sizing_guidance": "2-3% portfolio weight; scale in over 2-3 months to average entry price",
-            "dissenting_views": [
-                "Devil's Advocate argues the risk/reward is insufficient at current valuation — better entry points likely on any macro correction"
-            ],
-            "debate_quality_score": 8.0
+        "devil": {
+            "focus": "strongest counterargument to emerging consensus, hidden assumptions",
+            "style": "adversarial and rigorous",
         },
     }
 
-    def chat(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
-        import json, time
-        time.sleep(0.5)  # simulate latency
-        round_num = self._detect_round(messages)
-        return json.dumps(self._MOCK_RESPONSES.get(round_num, self._MOCK_RESPONSES[1]))
+    # Bearish signals in doc text → flip to SELL bias
+    _BEARISH_KEYWORDS = [
+        "loss", "decline", "debt", "lawsuit", "fraud", "bankruptcy", "miss",
+        "downgrade", "headwind", "risk", "concern", "weak", "poor", "negative",
+        "short", "overvalued", "bubble", "impairment", "write-off",
+    ]
+    _BULLISH_KEYWORDS = [
+        "growth", "profit", "margin", "beat", "record", "expand", "moat",
+        "upgrade", "opportunity", "upside", "strong", "accelerat", "dominant",
+        "cash flow", "buyback", "dividend", "undervalued",
+    ]
 
-    async def achat(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
-        import json, asyncio
-        await asyncio.sleep(0.5)
-        round_num = self._detect_round(messages)
-        return json.dumps(self._MOCK_RESPONSES.get(round_num, self._MOCK_RESPONSES[1]))
+    @staticmethod
+    def _extract_context(messages):
+        """Pull question + document snippet from the message list."""
+        full_text = " ".join(m.get("content", "") for m in messages)
+        # Extract the Question line
+        import re
+        q_match = re.search(r'\*\*Question:\*\*\s*(.+?)\n', full_text)
+        question = q_match.group(1).strip() if q_match else "this investment"
+        # Grab first 3000 chars of Document section
+        doc_match = re.search(r'\*\*Document:\*\*\s*([\s\S]{50,3000})', full_text)
+        doc_snippet = doc_match.group(1)[:3000] if doc_match else full_text[:1000]
+        return question, doc_snippet
+
+    @staticmethod
+    def _score_sentiment(text):
+        """Return (direction, conviction) based on keyword frequency."""
+        text_l = text.lower()
+        bull = sum(text_l.count(k) for k in MockProvider._BULLISH_KEYWORDS)
+        bear = sum(text_l.count(k) for k in MockProvider._BEARISH_KEYWORDS)
+        total = bull + bear or 1
+        bull_ratio = bull / total
+        if bull_ratio > 0.60:
+            return "BUY", round(min(8.5, 6.0 + bull_ratio * 2.5), 1)
+        elif bull_ratio < 0.40:
+            return "SELL", round(min(8.0, 4.5 + (1 - bull_ratio) * 2.5), 1)
+        else:
+            return "HOLD", 5.5
+
+    @staticmethod
+    def _extract_sentences(text, n=6):
+        """Pull the first n non-trivial sentences from the document."""
+        import re
+        sents = re.split(r'(?<=[.!?])\s+', text.replace('\n', ' '))
+        return [s.strip() for s in sents if len(s.strip()) > 40][:n]
+
+    @staticmethod
+    def _extract_numbers(text):
+        """Find numeric metrics mentioned in the text."""
+        import re
+        # Match things like "$45B", "18%", "3.2x", "$12.50"
+        return re.findall(r'\$?[\d,]+(?:\.\d+)?(?:[BMK%x]|\s*(?:billion|million|percent))?', text)[:8]
+
+    @staticmethod
+    def _detect_agent(messages):
+        """Detect which agent role is speaking from the system prompt."""
+        sys_text = next((m.get("content","") for m in messages if m.get("role")=="system"), "").lower()
+        if "quant" in sys_text:
+            return "quant"
+        if "fundamental" in sys_text:
+            return "fundamental"
+        if "risk" in sys_text or "chief risk" in sys_text:
+            return "risk"
+        if "devil" in sys_text or "adversar" in sys_text:
+            return "devil"
+        return "quant"
 
     @staticmethod
     def _detect_round(messages):
         text = " ".join(m.get("content", "") for m in messages).lower()
-        # Check most specific (CIO) first — round 4 transcript contains all prior keywords
         if "cio" in text and "synthesis" in text:
             return 4
-        if "rebuttal" in text:
+        if "rebuttal" in text or "defense" in text:
             return 3
-        if "cross-examination" in text:
+        if "cross-examination" in text or "challenge" in text:
             return 2
         return 1
+
+    def _build_round1(self, messages):
+        import random
+        question, doc = self._extract_context(messages)
+        direction, conviction = self._score_sentiment(doc)
+        agent = self._detect_agent(messages)
+        sentences = self._extract_sentences(doc)
+        numbers = self._extract_numbers(doc)
+
+        # Build arguments grounded in actual doc sentences
+        key_args = []
+        key_risks = []
+        if sentences:
+            key_args.append(sentences[0] if len(sentences) > 0 else "Strong fundamentals support the thesis")
+            key_args.append(sentences[2] if len(sentences) > 2 else "Favorable market positioning")
+            key_args.append(sentences[4] if len(sentences) > 4 else "Compelling risk/reward at current levels")
+            key_risks.append(sentences[1] if len(sentences) > 1 else "Execution risk remains elevated")
+            key_risks.append(sentences[3] if len(sentences) > 3 else "Macro headwinds could pressure near-term results")
+        else:
+            key_args = [
+                f"The investment thesis for {question[:60]} is supported by the submitted research",
+                "Operating leverage and margin expansion trajectory are favorable",
+                "Valuation appears compelling on a risk-adjusted basis",
+            ]
+            key_risks = [
+                "Macro and rate environment creates near-term uncertainty",
+                "Execution risk on key strategic initiatives remains elevated",
+            ]
+
+        # Quant adds numbers if any found
+        if agent == "quant" and numbers:
+            clean_nums = [n for n in numbers[:4] if len(n) > 1]
+            if clean_nums:
+                key_args[0] = f"Key metrics cited in the document ({', '.join(clean_nums)}) support the {direction} thesis"
+
+        # Devil's Advocate flips conviction
+        if agent == "devil":
+            direction = "SELL" if direction == "BUY" else "BUY" if direction == "SELL" else "HOLD"
+            conviction = max(1.0, conviction - 2.0)
+            key_args = [
+                f"The emerging {('BUY' if direction=='SELL' else 'SELL')} consensus is not justified by the evidence",
+                key_risks[0] if key_risks else "The core assumption is flawed and not stress-tested",
+                "Risk/reward is asymmetrically unfavorable at current entry",
+            ]
+
+        # Risk manager lowers conviction
+        if agent == "risk":
+            conviction = max(1.0, conviction - 1.5)
+            key_risks = [
+                key_risks[0] if key_risks else "Tail risk is under-appreciated by the committee",
+                "Liquidity and correlation assumptions may not hold in a stress scenario",
+                "Position sizing must account for potential max drawdown of 30%+",
+            ]
+
+        nums_str = numbers[0] if numbers else "N/A"
+        return {
+            "direction": direction,
+            "conviction": round(conviction, 1),
+            "key_arguments": key_args[:3],
+            "key_risks": key_risks[:2],
+            "price_target": nums_str if '$' in nums_str else None,
+            "expected_return": "10-20% over 12 months" if direction == "BUY" else "-10% to -20% over 12 months" if direction == "SELL" else "0-5% sideways",
+            "time_horizon": "12 months",
+            "causal_factors": [
+                {
+                    "event": sentences[0][:80] if sentences else "Primary catalyst from submitted document",
+                    "channel": "Earnings and cash flow impact",
+                    "direction": "bullish" if direction == "BUY" else "bearish",
+                    "magnitude": "high" if conviction > 7 else "medium",
+                    "confidence": round(conviction / 10.0, 2),
+                    "time_horizon": "medium_term",
+                }
+            ],
+        }
+
+    def _build_round2(self, messages):
+        question, doc = self._extract_context(messages)
+        direction, conviction = self._score_sentiment(doc)
+        sentences = self._extract_sentences(doc, n=4)
+        s0 = sentences[0][:100] if sentences else "the bullish thesis"
+        s1 = sentences[1][:100] if len(sentences) > 1 else "the margin expansion assumption"
+        opp_dir = "SELL" if direction == "BUY" else "BUY"
+        return {
+            "challenges": {
+                "Quant Analyst": [
+                    f"The quantitative case relies on {s0} — but this hasn't been stress-tested at different rate regimes",
+                    f"The momentum signal embedded in {direction} call has historically mean-reverted within 3 months at similar setups",
+                ],
+                "Fundamental Analyst": [
+                    f"{s1} — management guidance suggests the opposite: near-term margin compression before any expansion",
+                    f"The moat is narrower than assumed; competition is encroaching on the core value proposition",
+                ],
+                "Risk Manager": [
+                    f"Your tail risk analysis doesn't account for correlation breakdown in a stress event",
+                    f"The {opp_dir} scenario probability is significantly underweighted given current macro backdrop",
+                ],
+                "Devil's Advocate": [
+                    f"The entire {direction} consensus is built on the assumption that current trends continue — they won't",
+                    f"The document itself contains signals pointing to a {opp_dir} scenario that the committee is ignoring",
+                ],
+            }
+        }
+
+    def _build_round3(self, messages):
+        question, doc = self._extract_context(messages)
+        direction, conviction = self._score_sentiment(doc)
+        sentences = self._extract_sentences(doc, n=3)
+        updated_conviction = round(max(3.0, conviction - 0.8 + (hash(question) % 3) * 0.3), 1)
+        return {
+            "defenses": [
+                f"The challenges raised don't negate the core thesis: {sentences[0][:120] if sentences else 'the fundamental driver remains intact'}",
+                f"Even in a bear scenario for the {direction} case, the risk/reward still skews favorable over a 12-month horizon",
+            ],
+            "concessions": [
+                "I concede the near-term macro headwinds are more significant than initially modeled — adjusting conviction downward by 0.5",
+            ],
+            "updated_conviction": updated_conviction,
+            "updated_direction": direction,
+        }
+
+    def _build_round4(self, messages):
+        question, doc = self._extract_context(messages)
+        direction, conviction = self._score_sentiment(doc)
+        sentences = self._extract_sentences(doc, n=4)
+
+        # Weighted distribution based on document sentiment
+        if direction == "BUY":
+            dist = {"BUY": round(0.50 + (conviction-5)/20, 2), "HOLD": 0.28, "SELL": 0.12}
+        elif direction == "SELL":
+            dist = {"BUY": 0.12, "HOLD": 0.28, "SELL": round(0.50 + (conviction-5)/20, 2)}
+        else:
+            dist = {"BUY": 0.30, "HOLD": 0.45, "SELL": 0.25}
+
+        # Normalize to sum to 1
+        total = sum(dist.values())
+        dist = {k: round(v/total, 2) for k, v in dist.items()}
+
+        thesis_base = sentences[0][:200] if sentences else f"Based on the submitted research, the committee analyzed {question[:80]}."
+        return {
+            "recommendation": direction,
+            "confidence_distribution": dist,
+            "consensus_conviction": round(conviction - 0.3, 1),
+            "key_thesis": (
+                f"The investment committee recommends {direction} with {'moderate' if 5 < conviction <= 7.5 else 'high' if conviction > 7.5 else 'low'} conviction "
+                f"based on analysis of the submitted document. {thesis_base} "
+                f"The debate surfaced {'bullish' if direction=='BUY' else 'bearish' if direction=='SELL' else 'mixed'} signals "
+                f"across quantitative, fundamental, and risk dimensions."
+            ),
+            "primary_risks": [
+                sentences[1][:120] if len(sentences) > 1 else "Execution risk on the primary thesis driver",
+                sentences[2][:120] if len(sentences) > 2 else "Macro and rate environment may compress multiples",
+                "Tail risk scenarios are not fully priced in by the market",
+            ],
+            "position_sizing_guidance": (
+                f"{'2-4%' if conviction > 7 else '1-2%'} portfolio weight; "
+                f"{'scale in over 4-6 weeks' if direction in ('BUY','SELL') else 'wait for clearer signal before initiating'}"
+            ),
+            "dissenting_views": [
+                f"Devil's Advocate maintains that the {('SELL' if direction=='BUY' else 'BUY')} case is underweighted — "
+                f"the document contains signals that challenge the {direction} consensus",
+            ],
+            "debate_quality_score": round(7.0 + (conviction % 2) * 0.5, 1),
+        }
+
+    def _generate(self, messages):
+        round_num = self._detect_round(messages)
+        if round_num == 1:
+            return self._build_round1(messages)
+        elif round_num == 2:
+            return self._build_round2(messages)
+        elif round_num == 3:
+            return self._build_round3(messages)
+        else:
+            return self._build_round4(messages)
+
+    def chat(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
+        import json, time
+        time.sleep(0.3)
+        return json.dumps(self._generate(messages))
+
+    async def achat(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
+        import json, asyncio
+        await asyncio.sleep(0.3)
+        return json.dumps(self._generate(messages))
 
 
 class OpenAIProvider:
