@@ -17,4 +17,4 @@ ENV PYTHONUNBUFFERED=1
 
 EXPOSE 10000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:10000", "--workers", "2", "--timeout", "120", "app:create_app()"]
+CMD ["gunicorn", "--bind", "0.0.0.0:10000", "--workers", "1", "--threads", "4", "--timeout", "120", "app:create_app()"]

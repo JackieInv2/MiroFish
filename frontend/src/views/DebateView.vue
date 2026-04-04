@@ -71,7 +71,14 @@
             ></textarea>
           </div>
           <div class="input-group">
-            <label class="input-label">02 / RESEARCH DOCUMENT <span class="label-meta">PDF · TXT · MD</span></label>
+            <label class="input-label">02 / RESEARCH DOCUMENT <span class="label-meta">paste text or drop file</span></label>
+            <textarea
+              v-if="!uploadedFile"
+              v-model="documentText"
+              class="input-textarea doc-textarea"
+              rows="5"
+              placeholder="Paste your investment memo, earnings report, or research note here…"
+            ></textarea>
             <div
               class="file-drop-zone"
               :class="{ 'has-file': uploadedFile, 'drag-over': isDragOver }"
@@ -80,8 +87,8 @@
               @dragleave="isDragOver = false"
               @drop.prevent="handleDrop"
             >
-              <span v-if="!uploadedFile" class="drop-text">Drop file or click to upload</span>
-              <span v-else class="drop-text file-name">📄 {{ uploadedFile.name }}</span>
+              <span v-if="!uploadedFile" class="drop-text">Or drop a file (PDF · TXT · MD)</span>
+              <span v-else class="drop-text file-name">📄 {{ uploadedFile.name }} <button class="clear-file-btn" @click.stop="clearFile">✕</button></span>
             </div>
             <input ref="fileInput" type="file" accept=".pdf,.txt,.md" class="hidden-input" @change="handleFileChange" />
           </div>
@@ -304,6 +311,7 @@ const AGENT_SHORT_NAMES = {
 
 const state = ref('idle') // idle | running | complete | error
 const question = ref('')
+const documentText = ref('')
 const uploadedFile = ref(null)
 const isDragOver = ref(false)
 const progress = ref(0)
@@ -408,6 +416,11 @@ function handleFileChange(e) {
   if (uploadedFile.value) addLog(`File loaded · ${uploadedFile.value.name}`)
 }
 
+function clearFile() {
+  uploadedFile.value = null
+  if (fileInput.value) fileInput.value.value = ''
+}
+
 function handleDrop(e) {
   isDragOver.value = false
   const file = e.dataTransfer.files[0]
@@ -439,7 +452,8 @@ async function startDebate() {
       payload.append('file', uploadedFile.value)
       payload.append('question', q)
     } else {
-      payload = { question: q, text: q }
+      const docText = documentText.value.trim() || q
+      payload = { question: q, text: docText }
     }
 
     const res = await apiStartDebate(payload)
@@ -457,10 +471,10 @@ async function startDebate() {
 }
 
 async function pollOnce(tick) {
+  // Use getDebateStatus directly — the axios interceptor returns res directly
   const statusRes = await getDebateStatus(debateId)
-  // axios interceptor unwraps: statusRes IS { status, progress, ... }
-  const s = statusRes.status || statusRes.data?.status
-  const p = statusRes.progress ?? statusRes.data?.progress ?? 0
+  const s = statusRes.status
+  const p = statusRes.progress ?? 0
 
   progress.value = p
 
@@ -477,32 +491,47 @@ async function pollOnce(tick) {
 
 function startPolling() {
   let tick = 0
-  // Poll immediately after 1s (backend is fast), then every 2s
+  let done = false
+
   const doPoll = async () => {
+    if (done) return
     try {
       tick++
       const s = await pollOnce(tick)
       if (s === 'completed') {
-        clearInterval(pollInterval)
-        pollInterval = null
+        done = true
+        stopPolling()
         addLog('Debate complete · fetching results', 'success')
         await fetchResults()
-      } else if (s === 'error') {
-        clearInterval(pollInterval)
-        pollInterval = null
+      } else if (s === 'failed' || s === 'error') {
+        done = true
+        stopPolling()
         state.value = 'error'
         errorMessage.value = 'Debate engine reported an error'
         addLog('Debate engine error', 'error')
         stopEdgeAnimation()
       }
     } catch (err) {
-      addLog(`Poll error: ${err.message}`, 'warn')
+      // Don't log every poll failure — backend may still be cold-starting
+      if (tick > 5) addLog(`Poll error: ${err.message}`, 'warn')
     }
   }
-  // First poll after 1.5s (debate usually completes in ~2s)
-  pollTimeout = setTimeout(doPoll, 1500)
-  // Then every 2s
-  pollInterval = setInterval(doPoll, 2000)
+
+  // Simple recursive setTimeout — no dual-fire from setInterval + setTimeout
+  const scheduleNext = (delay) => {
+    pollTimeout = setTimeout(async () => {
+      await doPoll()
+      if (!done) scheduleNext(2000)
+    }, delay)
+  }
+  scheduleNext(2000) // first poll at 2s
+}
+
+function stopPolling() {
+  clearTimeout(pollTimeout)
+  clearInterval(pollInterval)
+  pollTimeout = null
+  pollInterval = null
 }
 
 async function fetchResults() {
@@ -530,17 +559,16 @@ async function fetchResults() {
 function resetDebate() {
   state.value = 'idle'
   question.value = ''
+  documentText.value = ''
   uploadedFile.value = null
+  if (fileInput.value) fileInput.value.value = ''
   debateResults.value = null
   selectedAgent.value = null
   progress.value = 0
   debateId = null
   agentStatus.value = {}
   showRebuttal.value = {}
-  clearInterval(pollInterval)
-  clearTimeout(pollTimeout)
-  pollInterval = null
-  pollTimeout = null
+  stopPolling()
   stopEdgeAnimation()
   resetGraphToIdle()
   addLog('New debate session started')
@@ -1162,6 +1190,19 @@ watch(state, (newState) => {
 }
 .input-textarea::placeholder { color: #444; }
 .input-textarea:focus { border-color: var(--orange); }
+.doc-textarea { font-size: 0.82rem; }
+
+.clear-file-btn {
+  background: none;
+  border: none;
+  color: var(--red);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.clear-file-btn:hover { opacity: 0.7; }
 
 .file-drop-zone {
   background: var(--surface);
