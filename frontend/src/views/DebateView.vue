@@ -71,7 +71,7 @@
             ></textarea>
           </div>
           <div class="input-group">
-            <label class="input-label">02 / RESEARCH DOCUMENT <span class="label-meta">PDF · TXT · MD</span></label>
+            <label class="input-label">02 / RESEARCH DOCUMENT <span class="label-meta">Upload file or paste text</span></label>
             <div
               class="file-drop-zone"
               :class="{ 'has-file': uploadedFile, 'drag-over': isDragOver }"
@@ -84,6 +84,14 @@
               <span v-else class="drop-text file-name">📄 {{ uploadedFile.name }}</span>
             </div>
             <input ref="fileInput" type="file" accept=".pdf,.txt,.md" class="hidden-input" @change="handleFileChange" />
+            <div class="or-divider"><span>OR PASTE TEXT</span></div>
+            <textarea
+              v-model="documentText"
+              class="input-textarea doc-textarea"
+              rows="5"
+              placeholder="Paste research document, earnings report, or investment memo text here..."
+              :disabled="!!uploadedFile"
+            ></textarea>
           </div>
           <button class="start-btn" @click="startDebate" :disabled="!question.trim()">
             START IC DEBATE <span class="btn-arrow">→</span>
@@ -304,6 +312,7 @@ const AGENT_SHORT_NAMES = {
 
 const state = ref('idle') // idle | running | complete | error
 const question = ref('')
+const documentText = ref('')
 const uploadedFile = ref(null)
 const isDragOver = ref(false)
 const progress = ref(0)
@@ -439,7 +448,9 @@ async function startDebate() {
       payload.append('file', uploadedFile.value)
       payload.append('question', q)
     } else {
-      payload = { question: q, text: q }
+      // Use pasted document text, or fall back to the question itself
+      const docText = documentText.value.trim() || q
+      payload = { question: q, text: docText }
     }
 
     const res = await apiStartDebate(payload)
@@ -530,6 +541,7 @@ async function fetchResults() {
 function resetDebate() {
   state.value = 'idle'
   question.value = ''
+  documentText.value = ''
   uploadedFile.value = null
   debateResults.value = null
   selectedAgent.value = null
@@ -1183,6 +1195,22 @@ watch(state, (newState) => {
 }
 .file-name { color: var(--green); }
 .hidden-input { display: none; }
+.or-divider {
+  text-align: center;
+  margin: 8px 0;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: #444;
+  letter-spacing: 0.1em;
+}
+.doc-textarea {
+  min-height: 80px;
+  font-size: 0.78rem;
+}
+.doc-textarea:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 .start-btn {
   width: 100%;
